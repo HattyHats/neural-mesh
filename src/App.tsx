@@ -42,7 +42,7 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchIndex, setSearchIndex] = useState(0);
 
-  const { theme, setTheme } = useGraphStore();
+  const { setTheme } = useGraphStore();
 
   useEffect(() => {
     const savedTheme = localStorage.getItem('neural_mesh_theme') || 'dark';
@@ -50,11 +50,6 @@ export default function App() {
     document.documentElement.setAttribute('data-theme', savedTheme);
   }, []);
 
-  const changeTheme = (newTheme: string) => {
-    setTheme(newTheme);
-    localStorage.setItem('neural_mesh_theme', newTheme);
-    document.documentElement.setAttribute('data-theme', newTheme);
-  };
 
   // Initialize
   useEffect(() => {

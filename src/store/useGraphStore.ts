@@ -223,7 +223,7 @@ export const useGraphStore = create<GraphState>((set) => ({
       return { nodes: newNodes, edges: newEdges };
     });
   },
-  setTheme: (theme) => set({ theme }),
+  setTheme: (theme) => set({ theme: theme as any }),
   setPeerCursor: (cursor) => set({ peerCursor: cursor }),
   setPeerLockedNode: (id) => set({ peerLockedNodeId: id }),
   setIsP2PConnected: (isConnected) => set({ isP2PConnected: isConnected })
