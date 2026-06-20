@@ -476,6 +476,13 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ onDoubleClick })
     if (isDraggingCanvasRef.current) {
       transformRef.current.x += dx;
       transformRef.current.y += dy;
+    } else if (nodeDraggingRef.current) {
+      const state = useGraphStore.getState();
+      const draggedNode = state.nodes.find(n => n.id === nodeDraggingRef.current);
+      if (draggedNode && !draggedNode.isLocked) {
+        draggedNode.x += dx / transformRef.current.scale;
+        draggedNode.y += dy / transformRef.current.scale;
+      }
     }
 
     const now = Date.now();

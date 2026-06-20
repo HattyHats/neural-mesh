@@ -60,6 +60,7 @@ export interface GraphState {
   updateNodeDetails: (id: string, details: string) => void;
   updateNodeRadius: (id: string, radius: number) => void;
   mergeNodes: (targetId: string, sourceId: string) => void;
+  deleteNode: (id: string) => void;
   mergeGraph: (incomingNodes: Node[], incomingEdges: Edge[]) => void;
   setTheme: (theme: string) => void;
   updateNodeStyle: (id: string, color?: string, imageUrl?: string) => void;
@@ -201,6 +202,13 @@ export const useGraphStore = create<GraphState>((set) => ({
          arr.findIndex(a => (a.source === e.source && a.target === e.target) || (a.source === e.target && a.target === e.source)) === idx
       );
       
+      return { nodes: newNodes, edges: newEdges };
+    });
+  },
+  deleteNode: (id) => {
+    set(state => {
+      const newNodes = state.nodes.filter(n => n.id !== id);
+      const newEdges = state.edges.filter(e => e.source !== id && e.target !== id);
       return { nodes: newNodes, edges: newEdges };
     });
   },

@@ -287,6 +287,16 @@ export default function App() {
         setSearchQuery('');
         setSearchIndex(0);
       }
+      
+      if (e.key === 'Backspace' || e.key === 'Delete') {
+        if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA') return;
+        const selectedId = useGraphStore.getState().selectedNodeId;
+        if (selectedId) {
+           useGraphStore.getState().saveHistory();
+           useGraphStore.getState().deleteNode(selectedId);
+           useGraphStore.getState().setSelectedNodeId(null);
+        }
+      }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);

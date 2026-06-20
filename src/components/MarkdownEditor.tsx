@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useGraphStore } from '../store/useGraphStore';
 import { syncGraph } from '../lib/webrtc';
-import { X, Save, Maximize2, Eye, Edit3, BrainCircuit } from 'lucide-react';
+import { X, Save, Maximize2, Eye, Edit3, BrainCircuit, Trash2 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { brainstormConcept } from '../lib/ai';
@@ -226,7 +226,7 @@ export function MarkdownEditor() {
         </div>
       </div>
 
-      {isImage && (
+      {(isImage || isSticky) && (
         <div style={{ padding: '15px 20px', borderBottom: '1px solid #3f3f46', display: 'flex', alignItems: 'center', gap: '15px' }}>
           <Maximize2 size={16} color="#a1a1aa" />
           <input 
@@ -320,17 +320,36 @@ export function MarkdownEditor() {
       </div>
       <div style={{ padding: '20px', borderTop: '1px solid #3f3f46', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         
-        <button 
-          onClick={() => setShowAiWarning(true)}
-          style={{
-            display: 'flex', alignItems: 'center', gap: '8px', background: '#8b5cf6', color: '#fff',
-            border: 'none', padding: '10px 16px', borderRadius: '8px', cursor: 'pointer', fontWeight: 600
-          }}
-          title="Download & Run Local AI Model to brainstorm related concepts"
-        >
-          <BrainCircuit size={18} />
-          Brainstorm (Local AI)
-        </button>
+        <div style={{ display: 'flex', gap: '10px' }}>
+          <button 
+            onClick={() => setShowAiWarning(true)}
+            style={{
+              display: 'flex', alignItems: 'center', gap: '8px', background: '#8b5cf6', color: '#fff',
+              border: 'none', padding: '10px 16px', borderRadius: '8px', cursor: 'pointer', fontWeight: 600
+            }}
+            title="Download & Run Local AI Model to brainstorm related concepts"
+          >
+            <BrainCircuit size={18} />
+            Brainstorm
+          </button>
+          
+          <button 
+            onClick={() => {
+               if (window.confirm("Are you sure you want to delete this thought?")) {
+                  useGraphStore.getState().deleteNode(selectedNodeId);
+                  useGraphStore.getState().setSelectedNodeId(null);
+                  setTimeout(syncGraph, 100);
+               }
+            }}
+            style={{
+              display: 'flex', alignItems: 'center', gap: '8px', background: '#ef4444', color: '#fff',
+              border: 'none', padding: '10px 16px', borderRadius: '8px', cursor: 'pointer', fontWeight: 600
+            }}
+            title="Delete this node completely"
+          >
+            <Trash2 size={18} />
+          </button>
+        </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <button 
