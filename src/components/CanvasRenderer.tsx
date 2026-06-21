@@ -63,10 +63,13 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ onDoubleClick })
   const transformRef = useRef({ x: window.innerWidth / 2, y: window.innerHeight / 2, scale: 1 });
   const isDraggingCanvasRef = useRef(false);
   const nodeDraggingRef = useRef<string | null>(null);
+  const nodeResizingRef = useRef<string | null>(null);
   const edgeSourceRef = useRef<string | null>(null);
   
   const lastMouseRef = useRef({ x: 0, y: 0 });
   const mouseCanvasPosRef = useRef({ x: 0, y: 0 });
+  const lassoStartRef = useRef<{ x: number, y: number } | null>(null);
+  const lassoEndRef = useRef<{ x: number, y: number } | null>(null);
   const didDragRef = useRef(false);
   const lastBroadcastRef = useRef<number>(0);
 
@@ -88,7 +91,28 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ onDoubleClick })
       t.scale = Math.max(0.1, t.scale / 1.2);
     };
     const handleRecenter = () => {
-      transformRef.current = { x: window.innerWidth / 2, y: window.innerHeight / 2, scale: 1 };
+      const nodes = useGraphStore.getState().nodes;
+      if (nodes.length === 0) {
+        transformRef.current = { x: window.innerWidth / 2, y: window.innerHeight / 2, scale: 1 };
+        return;
+      }
+      
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      nodes.forEach(n => {
+        if (n.x < minX) minX = n.x;
+        if (n.x > maxX) maxX = n.x;
+        if (n.y < minY) minY = n.y;
+        if (n.y > maxY) maxY = n.y;
+      });
+      
+      const cx = (minX + maxX) / 2;
+      const cy = (minY + maxY) / 2;
+      
+      transformRef.current = { 
+        x: window.innerWidth / 2 - cx, 
+        y: window.innerHeight / 2 - cy, 
+        scale: 1 
+      };
     };
 
     window.addEventListener('zoomIn', handleZoomIn);
@@ -115,16 +139,25 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ onDoubleClick })
       const dt = Math.min((time - lastTime) / 1000, 0.1);
       lastTime = time;
 
-      const { nodes, edges, selectedDate, focusNode } = useGraphStore.getState();
+      const { nodes, edges, selectedDate, focusNode, currentParentId } = useGraphStore.getState();
       
       if (focusNode) {
         const target = nodes.find(n => n.id === focusNode);
         if (target) {
           const t = transformRef.current;
-          t.x = (window.innerWidth / 2) - target.x * t.scale;
-          t.y = (window.innerHeight / 2) - target.y * t.scale;
+          const targetX = (window.innerWidth / 2) - target.x * t.scale;
+          const targetY = (window.innerHeight / 2) - target.y * t.scale;
+          
+          t.x += (targetX - t.x) * dt * 4;
+          t.y += (targetY - t.y) * dt * 4;
+          
+          // Stop focusing if we are close enough
+          if (Math.abs(targetX - t.x) < 5 && Math.abs(targetY - t.y) < 5) {
+            useGraphStore.getState().setFocusNode(null);
+          }
+        } else {
+          useGraphStore.getState().setFocusNode(null);
         }
-        useGraphStore.getState().setFocusNode(null);
       }
 
       const collapsedParents = nodes.filter(n => n.collapsed);
@@ -138,21 +171,25 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ onDoubleClick })
 
       let visibleNodes = nodes;
       let visibleEdges = edges;
+
+      // Filter by parentId (Infinite Depth)
+      visibleNodes = visibleNodes.filter(n => (n.parentId || null) === currentParentId);
+      visibleEdges = visibleEdges.filter(e => visibleNodes.find(n => n.id === e.source) && visibleNodes.find(n => n.id === e.target));
       
       if (selectedDate) {
         const visibleNodeIds = new Set<string>();
-        nodes.forEach(n => {
+        visibleNodes.forEach(n => {
           if (n.date === selectedDate) visibleNodeIds.add(n.id);
         });
-        edges.forEach(e => {
+        visibleEdges.forEach(e => {
           if (visibleNodeIds.has(e.source)) visibleNodeIds.add(e.target);
           if (visibleNodeIds.has(e.target)) visibleNodeIds.add(e.source);
         });
         
-        visibleNodes = nodes.filter(n => visibleNodeIds.has(n.id) && (!hiddenNodeIds.has(n.id) || n.isDateNode || n.isCategory || n.collapsed));
-        visibleEdges = edges.filter(e => visibleNodeIds.has(e.source) && visibleNodeIds.has(e.target));
+        visibleNodes = visibleNodes.filter(n => visibleNodeIds.has(n.id) && (!hiddenNodeIds.has(n.id) || n.isDateNode || n.isCategory || n.collapsed));
+        visibleEdges = visibleEdges.filter(e => visibleNodeIds.has(e.source) && visibleNodeIds.has(e.target));
       } else {
-        visibleNodes = nodes.filter(n => !hiddenNodeIds.has(n.id) || n.isDateNode || n.isCategory || n.collapsed);
+        visibleNodes = visibleNodes.filter(n => !hiddenNodeIds.has(n.id) || n.isDateNode || n.isCategory || n.collapsed);
       }
       
       let newNodes = visibleNodes;
@@ -161,9 +198,10 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ onDoubleClick })
         
         if (nodeDraggingRef.current) {
            const draggedNode = newNodes.find(n => n.id === nodeDraggingRef.current);
-           if (draggedNode) {
-             draggedNode.x = mouseCanvasPosRef.current.x;
-             draggedNode.y = mouseCanvasPosRef.current.y;
+           const originalNode = nodes.find(n => n.id === nodeDraggingRef.current);
+           if (draggedNode && originalNode) {
+             draggedNode.x = originalNode.x;
+             draggedNode.y = originalNode.y;
              draggedNode.vx = 0;
              draggedNode.vy = 0;
            }
@@ -184,6 +222,26 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ onDoubleClick })
 
       ctx.clearRect(0, 0, width, height);
 
+      // Draw subtle background mesh
+      ctx.save();
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.03)';
+      ctx.lineWidth = 1;
+      const gridSize = 100 * transformRef.current.scale;
+      const offsetX = transformRef.current.x % gridSize;
+      const offsetY = transformRef.current.y % gridSize;
+      
+      ctx.beginPath();
+      for (let x = offsetX - gridSize; x < width + gridSize; x += gridSize) {
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, height);
+      }
+      for (let y = offsetY - gridSize; y < height + gridSize; y += gridSize) {
+        ctx.moveTo(0, y);
+        ctx.lineTo(width, y);
+      }
+      ctx.stroke();
+      ctx.restore();
+
       if (nodes.length === 0) {
         ctx.fillStyle = '#52525b';
         ctx.font = '18px "Inter", sans-serif';
@@ -196,16 +254,120 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ onDoubleClick })
       ctx.translate(t.x, t.y);
       ctx.scale(t.scale, t.scale);
 
-      ctx.lineWidth = 2 / t.scale;
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+      // Draw Groups
+      newNodes.filter(n => n.isGroup).forEach(group => {
+         const w = group.width || 400;
+         const h = group.height || 400;
+         const isSelected = useGraphStore.getState().selectedNodeIds.includes(group.id) || nodeDraggingRef.current === group.id;
+         
+         ctx.fillStyle = 'rgba(24, 24, 27, 0.4)';
+         ctx.strokeStyle = isSelected ? 'rgba(59, 130, 246, 0.8)' : 'rgba(255, 255, 255, 0.1)';
+         ctx.lineWidth = (isSelected ? 4 : 2) / t.scale;
+         
+         ctx.beginPath();
+         ctx.roundRect(group.x - w/2, group.y - h/2, w, h, 20);
+         ctx.fill();
+         ctx.stroke();
+         
+         // Title Bar Separator
+         ctx.beginPath();
+         ctx.moveTo(group.x - w/2, group.y - h/2 + 45);
+         ctx.lineTo(group.x + w/2, group.y - h/2 + 45);
+         ctx.stroke();
+         
+         ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+         ctx.font = `bold 16px "Inter", sans-serif`;
+         ctx.textAlign = 'left';
+         ctx.textBaseline = 'top';
+         ctx.fillText(group.text, group.x - w/2 + 20, group.y - h/2 + 15);
+         
+         // Resize Handle
+         ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+         ctx.beginPath();
+         ctx.moveTo(group.x + w/2, group.y + h/2 - 20);
+         ctx.lineTo(group.x + w/2, group.y + h/2);
+         ctx.lineTo(group.x + w/2 - 20, group.y + h/2);
+         ctx.closePath();
+         ctx.fill();
+      });
+
       visibleEdges.forEach(edge => {
         const source = newNodes.find(n => n.id === edge.source);
         const target = newNodes.find(n => n.id === edge.target);
         if (source && target) {
+          const maxInteractions = Math.max(source.interactionCount || 0, target.interactionCount || 0);
+          const thickness = Math.min(2 + (maxInteractions * 0.1), 8); // Max thickness of 8
+          ctx.lineWidth = thickness / t.scale;
+
+          if (edge.isGhost) {
+            ctx.strokeStyle = 'rgba(139, 92, 246, 0.6)';
+            ctx.setLineDash([5, 10]);
+          } else {
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+            ctx.setLineDash([]);
+          }
+
+          const dx = target.x - source.x;
+          const dy = target.y - source.y;
+          const angle = Math.atan2(dy, dx);
+          const targetRadius = target.radius || (target.isDateNode ? 30 : 25);
+          
+          const dist = Math.sqrt(dx*dx + dy*dy);
+          const arrowTipX = target.x - Math.cos(angle) * (targetRadius + 6);
+          const arrowTipY = target.y - Math.sin(angle) * (targetRadius + 6);
+          
           ctx.beginPath();
           ctx.moveTo(source.x, source.y);
-          ctx.lineTo(target.x, target.y);
+          
+          if (dist > targetRadius + 6) {
+             ctx.lineTo(arrowTipX, arrowTipY);
+          } else {
+             ctx.lineTo(target.x, target.y);
+          }
+          
+          if (!edge.isGhost) {
+            const grad = ctx.createLinearGradient(source.x, source.y, target.x, target.y);
+            const sourceColor = source.color || (source.isDateNode ? '#3b82f6' : (source.isCategory ? '#a855f7' : '#8b5cf6'));
+            const targetColor = target.color || (target.isDateNode ? '#3b82f6' : (target.isCategory ? '#a855f7' : '#8b5cf6'));
+            grad.addColorStop(0, sourceColor + '66');
+            grad.addColorStop(1, targetColor + '66');
+            ctx.strokeStyle = grad;
+            ctx.fillStyle = targetColor;
+          } else {
+            ctx.fillStyle = 'rgba(139, 92, 246, 0.6)';
+          }
+          
           ctx.stroke();
+          
+          // Draw Arrowhead
+          if (dist > targetRadius + 20) {
+            ctx.beginPath();
+            ctx.moveTo(arrowTipX, arrowTipY);
+            ctx.lineTo(arrowTipX - 12 * Math.cos(angle - Math.PI / 6), arrowTipY - 12 * Math.sin(angle - Math.PI / 6));
+            ctx.lineTo(arrowTipX - 12 * Math.cos(angle + Math.PI / 6), arrowTipY - 12 * Math.sin(angle + Math.PI / 6));
+            ctx.closePath();
+            ctx.fill();
+          }
+
+          // Draw Label
+          if (edge.label) {
+            const midX = (source.x + target.x) / 2;
+            const midY = (source.y + target.y) / 2;
+            ctx.font = `12px "Inter", sans-serif`;
+            const textWidth = ctx.measureText(edge.label).width;
+            
+            ctx.fillStyle = 'rgba(24, 24, 27, 0.8)';
+            ctx.beginPath();
+            ctx.roundRect(midX - textWidth / 2 - 6, midY - 10, textWidth + 12, 20, 10);
+            ctx.fill();
+            
+            ctx.fillStyle = '#a1a1aa';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(edge.label, midX, midY);
+          }
+          
+          ctx.setLineDash([]); // Reset dash
         }
       });
 
@@ -221,32 +383,73 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ onDoubleClick })
       }
 
       newNodes.forEach(node => {
+        if (node.isGroup) return;
+
         const isPeerLocked = useGraphStore.getState().peerLockedNodeId === node.id;
-        const size = node.radius || (node.isDateNode ? 30 : (node.isCategory ? 35 : 25));
+        
+        // Heatmap Logic
+        let opacity = 1.0;
+        if (node.lastInteraction) {
+           const daysOld = (Date.now() - node.lastInteraction) / (1000 * 60 * 60 * 24);
+           opacity = Math.max(0.4, 1.0 - (daysOld * 0.1)); // Fades completely over 6 days
+        }
+        ctx.globalAlpha = opacity;
+
+        const baseSize = node.radius || (node.isDateNode ? 30 : (node.isCategory ? 35 : 25));
+        const interactionBonus = Math.min((node.interactionCount || 0) * 0.5, 15); // Max +15px radius bonus
+        const size = baseSize + interactionBonus;
+        
+        let animatedSize = size;
+        if (node.createdAt) {
+          const age = Date.now() - node.createdAt;
+          if (age < 500) {
+            const t = age / 500;
+            const easeOutBack = 1 + 2.70158 * Math.pow(t - 1, 3) + 1.70158 * Math.pow(t - 1, 2);
+            animatedSize = size * Math.max(0.01, Math.min(easeOutBack, 1.5));
+          }
+        }
         
         if (node.isSticky) {
           ctx.fillStyle = node.color || '#fef08a';
           ctx.shadowColor = 'rgba(0,0,0,0.5)';
           ctx.shadowBlur = 10;
           ctx.shadowOffsetY = 5;
-          ctx.fillRect(node.x - size*2, node.y - size*2, size*4, size*4);
+          ctx.fillRect(node.x - animatedSize*2, node.y - animatedSize*2, animatedSize*4, animatedSize*4);
           ctx.shadowColor = 'transparent';
+          ctx.shadowBlur = 0;
+          ctx.shadowOffsetY = 0;
 
           ctx.strokeStyle = nodeDraggingRef.current === node.id ? '#00aaff' : (isPeerLocked ? '#ef4444' : 'rgba(0,0,0,0.1)');
           ctx.lineWidth = 2 / t.scale;
-          ctx.strokeRect(node.x - size*2, node.y - size*2, size*4, size*4);
+          ctx.strokeRect(node.x - animatedSize*2, node.y - animatedSize*2, animatedSize*4, animatedSize*4);
 
           ctx.fillStyle = '#18181b';
           ctx.font = `12px "Inter", sans-serif`;
           ctx.textAlign = 'left';
           ctx.textBaseline = 'top';
-          wrapText(ctx, node.details || node.text || 'Empty Sticky', node.x - size*2 + 10, node.y - size*2 + 10, size*4 - 20, 16);
+          wrapText(ctx, node.details || node.text || 'Empty Sticky', node.x - animatedSize*2 + 10, node.y - animatedSize*2 + 10, animatedSize*4 - 20, 16);
           return;
         }
 
-        ctx.fillStyle = node.isDateNode ? '#3b82f6' : (node.isCategory ? '#a855f7' : (node.color || '#111'));
-        buildShapePath(ctx, node, size);
+        const baseColor = node.isDateNode ? '#3b82f6' : (node.isCategory ? '#a855f7' : (node.color || '#8b5cf6'));
+        
+        if (baseColor.startsWith('#')) {
+          const grad = ctx.createRadialGradient(node.x, node.y, 0, node.x, node.y, animatedSize);
+          grad.addColorStop(0.3, baseColor + 'ff');
+          grad.addColorStop(0.8, baseColor + 'aa');
+          grad.addColorStop(1, baseColor + '00');
+          ctx.fillStyle = grad;
+          ctx.shadowColor = baseColor;
+          ctx.shadowBlur = 15;
+        } else {
+          ctx.fillStyle = baseColor;
+        }
+
+        buildShapePath(ctx, node, animatedSize);
         ctx.fill();
+        ctx.shadowBlur = 0;
+        ctx.shadowColor = 'transparent';
+        ctx.shadowOffsetY = 0;
         ctx.lineWidth = (node.collapsed ? 4 : 2) / t.scale;
         
         const strokeColor = nodeDraggingRef.current === node.id ? '#00aaff' : (isPeerLocked ? '#ef4444' : (node.isDateNode ? '#60a5fa' : (node.isCategory ? '#d8b4fe' : (node.color ? '#fff' : '#444'))));
@@ -256,8 +459,19 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ onDoubleClick })
         if (isPeerLocked) {
           ctx.save();
           ctx.fillStyle = 'rgba(239, 68, 68, 0.2)';
-          buildShapePath(ctx, node, size + 10 / t.scale);
+          buildShapePath(ctx, node, animatedSize + 10 / t.scale);
           ctx.fill();
+          ctx.restore();
+        }
+
+        const isSelected = useGraphStore.getState().selectedNodeIds.includes(node.id);
+        if (isSelected) {
+          ctx.save();
+          ctx.strokeStyle = 'rgba(59, 130, 246, 0.8)';
+          ctx.lineWidth = 3 / t.scale;
+          ctx.setLineDash([8 / t.scale, 8 / t.scale]);
+          buildShapePath(ctx, node, animatedSize + 12 / t.scale);
+          ctx.stroke();
           ctx.restore();
         }
 
@@ -270,11 +484,11 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ onDoubleClick })
           const img = imageCache.get(node.imageUrl);
           if (img && img.complete && img.naturalWidth > 0) {
             ctx.save();
-            buildShapePath(ctx, node, size);
+            buildShapePath(ctx, node, animatedSize);
             ctx.clip();
             try {
-              ctx.drawImage(img, node.x - size, node.y - size, size*2, size*2);
-            } catch (e) {
+              ctx.drawImage(img, node.x - animatedSize, node.y - animatedSize, animatedSize*2, animatedSize*2);
+            } catch (e: unknown) {
               console.warn("Failed to draw node image:", e);
             }
             ctx.restore();
@@ -282,8 +496,8 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ onDoubleClick })
         }
 
         if (node.details && node.details.trim().length > 0) {
-          const badgeX = node.x + size * 0.7;
-          const badgeY = node.y - size * 0.7;
+          const badgeX = node.x + animatedSize * 0.7;
+          const badgeY = node.y - animatedSize * 0.7;
           const badgeSize = 6;
           ctx.fillStyle = '#facc15';
           ctx.beginPath();
@@ -301,6 +515,22 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ onDoubleClick })
         ctx.fillStyle = node.isLocked ? '#a1a1aa' : (node.isDateNode || node.isCategory ? '#eff6ff' : '#eee');
         ctx.fillText(textToDraw, node.x, node.y + (node.isDateNode || node.isCategory ? 45 : 40));
       });
+
+      if (lassoStartRef.current && lassoEndRef.current) {
+        ctx.save();
+        ctx.fillStyle = 'rgba(59, 130, 246, 0.1)';
+        ctx.strokeStyle = 'rgba(59, 130, 246, 0.8)';
+        ctx.lineWidth = 1 / t.scale;
+        
+        const x = lassoStartRef.current.x;
+        const y = lassoStartRef.current.y;
+        const w = lassoEndRef.current.x - x;
+        const h = lassoEndRef.current.y - y;
+        
+        ctx.fillRect(x, y, w, h);
+        ctx.strokeRect(x, y, w, h);
+        ctx.restore();
+      }
 
       ctx.restore();
       
@@ -344,6 +574,7 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ onDoubleClick })
          
          ctx.fillStyle = '#fff';
          nodes.forEach(n => {
+            if (n.isGroup) return; // Skip groups in minimap dots
             ctx.beginPath();
             ctx.arc(n.x, n.y, 30, 0, Math.PI*2);
             ctx.fill();
@@ -360,6 +591,20 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ onDoubleClick })
          
          ctx.restore();
       }
+
+      // Sync Embed Positions
+      const embeds = document.querySelectorAll('[data-embed-id]');
+      embeds.forEach((el) => {
+         const id = el.getAttribute('data-embed-id');
+         const node = nodes.find(n => n.id === id);
+         if (node) {
+            const t = transformRef.current;
+            const x = (node.x - 160) * t.scale + t.x;
+            const y = (node.y + (node.radius || 25) + 20) * t.scale + t.y;
+            (el as HTMLElement).style.transform = `translate(${x}px, ${y}px) scale(${t.scale})`;
+            (el as HTMLElement).style.transformOrigin = '0 0';
+         }
+      });
 
       // Draw Peer Cursor
       const peerCursor = useGraphStore.getState().peerCursor;
@@ -439,12 +684,40 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ onDoubleClick })
     
     const state = useGraphStore.getState();
     const { nodes, peerLockedNodeId } = state;
-    const clickedNode = nodes.find(n => {
+    
+    // Check for resize handle first
+    let resizingNode = nodes.slice().reverse().find(n => {
+       if (!n.isGroup) return false;
+       const w = n.width || 400;
+       const h = n.height || 400;
+       const right = n.x + w/2;
+       const bottom = n.y + h/2;
+       return pos.x >= right - 25 && pos.x <= right && pos.y >= bottom - 25 && pos.y <= bottom;
+    });
+    
+    if (resizingNode) {
+       nodeResizingRef.current = resizingNode.id;
+       return;
+    }
+
+    let clickedNode = nodes.slice().reverse().find(n => {
+      if (n.isGroup) return false;
       const dx = n.x - pos.x;
       const dy = n.y - pos.y;
       const r = n.radius || 25;
       return dx * dx + dy * dy < r * r;
     });
+
+    if (!clickedNode) {
+      clickedNode = nodes.slice().reverse().find(n => {
+        if (!n.isGroup) return false;
+        const w = n.width || 400;
+        const h = n.height || 400;
+        // Only allow dragging by clicking the top 40px (Title Bar)
+        const isTitleBar = pos.x >= n.x - w/2 && pos.x <= n.x + w/2 && pos.y >= n.y - h/2 && pos.y <= n.y - h/2 + 40;
+        return isTitleBar;
+      });
+    }
 
     if (clickedNode) {
       if (peerLockedNodeId === clickedNode.id) {
@@ -458,7 +731,13 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ onDoubleClick })
         broadcastNodeLock(clickedNode.id);
       }
     } else {
-      isDraggingCanvasRef.current = true;
+      if (e.shiftKey) {
+        lassoStartRef.current = { x: pos.x, y: pos.y };
+        lassoEndRef.current = { x: pos.x, y: pos.y };
+        useGraphStore.getState().setSelectedNodeIds([]);
+      } else {
+        isDraggingCanvasRef.current = true;
+      }
     }
   };
 
@@ -469,19 +748,84 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ onDoubleClick })
     const dx = e.clientX - lastMouseRef.current.x;
     const dy = e.clientY - lastMouseRef.current.y;
     
-    if (Math.abs(dx) > 2 || Math.abs(dy) > 2) {
+    if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
       didDragRef.current = true;
     }
 
-    if (isDraggingCanvasRef.current) {
+    if (!didDragRef.current && (nodeDraggingRef.current || isDraggingCanvasRef.current)) {
+       return; // Ignore micro-twitches on click
+    }
+
+    if (nodeResizingRef.current) {
+      const state = useGraphStore.getState();
+      const node = state.nodes.find(n => n.id === nodeResizingRef.current);
+      if (node) {
+        const moveX = dx / transformRef.current.scale;
+        const moveY = dy / transformRef.current.scale;
+        
+        const w = node.width || 400;
+        const h = node.height || 400;
+        
+        // Keep top-left anchored
+        const topLeftX = node.x - w/2;
+        const topLeftY = node.y - h/2;
+        
+        node.width = Math.max(100, w + moveX);
+        node.height = Math.max(100, h + moveY);
+        
+        node.x = topLeftX + node.width / 2;
+        node.y = topLeftY + node.height / 2;
+      }
+    } else if (lassoStartRef.current) {
+      lassoEndRef.current = pos;
+      
+      const minX = Math.min(lassoStartRef.current.x, pos.x);
+      const maxX = Math.max(lassoStartRef.current.x, pos.x);
+      const minY = Math.min(lassoStartRef.current.y, pos.y);
+      const maxY = Math.max(lassoStartRef.current.y, pos.y);
+      
+      const newSelected = useGraphStore.getState().nodes.filter(n => 
+        n.x >= minX && n.x <= maxX && n.y >= minY && n.y <= maxY
+      ).map(n => n.id);
+      
+      useGraphStore.getState().setSelectedNodeIds(newSelected);
+    } else if (isDraggingCanvasRef.current) {
       transformRef.current.x += dx;
       transformRef.current.y += dy;
     } else if (nodeDraggingRef.current) {
       const state = useGraphStore.getState();
       const draggedNode = state.nodes.find(n => n.id === nodeDraggingRef.current);
       if (draggedNode && !draggedNode.isLocked) {
-        draggedNode.x += dx / transformRef.current.scale;
-        draggedNode.y += dy / transformRef.current.scale;
+        const moveX = dx / transformRef.current.scale;
+        const moveY = dy / transformRef.current.scale;
+        
+        draggedNode.x += moveX;
+        draggedNode.y += moveY;
+
+        if (draggedNode.isGroup) {
+           const w = draggedNode.width || 400;
+           const h = draggedNode.height || 400;
+           const left = draggedNode.x - moveX - w/2;
+           const right = draggedNode.x - moveX + w/2;
+           const top = draggedNode.y - moveY - h/2;
+           const bottom = draggedNode.y - moveY + h/2;
+           
+           state.nodes.forEach(n => {
+             if (n.id !== draggedNode.id && !n.isGroup && !n.isLocked) {
+               if (n.x >= left && n.x <= right && n.y >= top && n.y <= bottom) {
+                 n.x += moveX;
+                 n.y += moveY;
+               }
+             }
+           });
+        } else if (state.selectedNodeIds.includes(draggedNode.id)) {
+           state.nodes.forEach(n => {
+             if (n.id !== draggedNode.id && state.selectedNodeIds.includes(n.id) && !n.isLocked) {
+                n.x += moveX;
+                n.y += moveY;
+             }
+           });
+        }
       }
     }
 
@@ -501,6 +845,13 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ onDoubleClick })
   };
 
   const handleMouseUp = (e: React.MouseEvent) => {
+    nodeResizingRef.current = null;
+    
+    if (lassoStartRef.current) {
+      lassoStartRef.current = null;
+      lassoEndRef.current = null;
+    }
+
     if (edgeSourceRef.current) {
       const pos = getCanvasPos(e.clientX, e.clientY);
       const { nodes } = useGraphStore.getState();
@@ -570,6 +921,7 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ onDoubleClick })
   return (
     <canvas
       ref={canvasRef}
+      /* eslint-disable-next-line react-hooks/refs */
       style={{ display: 'block', width: '100vw', height: '100vh', cursor: isDraggingCanvasRef.current ? 'grabbing' : 'grab' }}
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}

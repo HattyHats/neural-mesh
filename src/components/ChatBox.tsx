@@ -12,6 +12,7 @@ export function ChatBox({ isConnected }: { isConnected: boolean }) {
 
   useEffect(() => {
     if (chatMessages.length > 0) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setIsOpen(true);
     }
   }, [chatMessages.length]);

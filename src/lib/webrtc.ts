@@ -16,7 +16,7 @@ export const initP2P = (onStatus: (msg: string) => void, onMessage: (data: any) 
     event.channel.onmessage = (e) => {
       try {
          onMessage(JSON.parse(e.data));
-      } catch (err) {}
+      } catch {}
     };
   };
 

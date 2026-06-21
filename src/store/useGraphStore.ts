@@ -18,11 +18,23 @@ export interface Node {
   radius?: number;
   shape?: 'circle' | 'square' | 'hexagon' | 'triangle';
   isSticky?: boolean;
+  parentId?: string;
+  lastInteraction?: number;
+  interactionCount?: number;
+  isGravityWell?: boolean;
+  createdAt?: number; // timestamp for birth animation
+  isGroup?: boolean;
+  width?: number;
+  height?: number;
+  embedUrl?: string;
+  isGhost?: boolean;
 }
 
 export interface Edge {
   source: string;
   target: string;
+  isGhost?: boolean;
+  label?: string;
 }
 
 export interface GraphState {
@@ -33,9 +45,16 @@ export interface GraphState {
   future: { nodes: Node[], edges: Edge[] }[];
   selectedDate: string | null;
   selectedNodeId: string | null;
+  selectedNodeIds: string[];
   vaultSalt: string | null;
   vaultKey: CryptoKey | null;
   focusNode: string | null;
+  currentParentId: string | null;
+  setCurrentParentId: (id: string | null) => void;
+  pathway: string[];
+  isPathwayPlaying: boolean;
+  setPathway: (pathway: string[]) => void;
+  setIsPathwayPlaying: (playing: boolean) => void;
   peerCursor: { x: number, y: number } | null;
   peerLockedNodeId: string | null;
   isP2PConnected: boolean;
@@ -53,6 +72,7 @@ export interface GraphState {
   unlockNode: (id: string, text: string) => void;
   setFocusNode: (id: string | null) => void;
   setSelectedNodeId: (id: string | null) => void;
+  setSelectedNodeIds: (ids: string[]) => void;
   toggleCollapse: (id: string) => void;
   saveHistory: () => void;
   undo: () => void;
@@ -66,6 +86,7 @@ export interface GraphState {
   updateNodeStyle: (id: string, color?: string, imageUrl?: string) => void;
   updateNodeShape: (id: string, shape: 'circle' | 'square' | 'hexagon' | 'triangle') => void;
   toggleSticky: (id: string) => void;
+  toggleGravityWell: (id: string) => void;
   setPeerCursor: (cursor: { x: number, y: number } | null) => void;
   setPeerLockedNode: (id: string | null) => void;
   setIsP2PConnected: (isConnected: boolean) => void;
@@ -79,9 +100,16 @@ export const useGraphStore = create<GraphState>((set) => ({
   future: [],
   selectedDate: null,
   selectedNodeId: null,
+  selectedNodeIds: [],
   focusNode: null,
   vaultSalt: null,
   vaultKey: null,
+  currentParentId: null,
+  setCurrentParentId: (id) => set({ currentParentId: id }),
+  pathway: [],
+  isPathwayPlaying: false,
+  setPathway: (pathway) => set({ pathway }),
+  setIsPathwayPlaying: (playing) => set({ isPathwayPlaying: playing }),
   peerCursor: null,
   peerLockedNodeId: null,
   isP2PConnected: false,
@@ -92,11 +120,11 @@ export const useGraphStore = create<GraphState>((set) => ({
   addNode: (node) => {
     set((state) => {
       if (state.nodes.some(n => n.id === node.id)) return state;
-      return { nodes: [...state.nodes, node] };
+      return { nodes: [...state.nodes, { ...node, createdAt: node.createdAt || Date.now() }] };
     });
   },
   updateNodePos: (id, x, y) => set((state) => ({
-    nodes: state.nodes.map(n => n.id === id ? { ...n, x, y } : n)
+    nodes: state.nodes.map(n => n.id === id ? { ...n, x, y, lastInteraction: Date.now(), interactionCount: (n.interactionCount || 0) + 1 } : n)
   })),
   updateNodeVelocity: (id, vx, vy) => set((state) => ({
     nodes: state.nodes.map(n => n.id === id ? { ...n, vx, vy } : n)
@@ -119,6 +147,7 @@ export const useGraphStore = create<GraphState>((set) => ({
   })),
   setFocusNode: (id) => set({ focusNode: id }),
   setSelectedNodeId: (id) => set({ selectedNodeId: id }),
+  setSelectedNodeIds: (ids) => set({ selectedNodeIds: ids }),
   toggleCollapse: (id) => set(state => ({
     nodes: state.nodes.map(n => n.id === id ? { ...n, collapsed: !n.collapsed } : n)
   })),
@@ -148,37 +177,38 @@ export const useGraphStore = create<GraphState>((set) => ({
       future: newFuture
     };
   }),
-  updateNodeDetails: (id, details) => {
-    set(state => ({
-      nodes: state.nodes.map(n => n.id === id ? { ...n, details } : n)
-    }));
-  },
+  updateNodeDetails: (id, details) => set((state) => ({
+    nodes: state.nodes.map(n => n.id === id ? { ...n, details, lastInteraction: Date.now(), interactionCount: (n.interactionCount || 0) + 1 } : n)
+  })),
   updateNodeRadius: (id, radius) => {
     set(state => ({
-      nodes: state.nodes.map(n => n.id === id ? { ...n, radius } : n)
+      nodes: state.nodes.map(n => n.id === id ? { ...n, radius, lastInteraction: Date.now(), interactionCount: (n.interactionCount || 0) + 1 } : n)
     }));
   },
   updateNodeStyle: (id, color, imageUrl) => {
     set(state => ({
-      nodes: state.nodes.map(n => {
-        if (n.id === id) {
-          const updated = { ...n };
-          if (color !== undefined) updated.color = color;
-          if (imageUrl !== undefined) updated.imageUrl = imageUrl;
-          return updated;
-        }
-        return n;
-      })
+      nodes: state.nodes.map(n => n.id === id ? { 
+        ...n, 
+        ...(color !== undefined && { color }), 
+        ...(imageUrl !== undefined && { imageUrl }),
+        lastInteraction: Date.now(), 
+        interactionCount: (n.interactionCount || 0) + 1
+      } : n)
     }));
   },
   updateNodeShape: (id, shape) => {
     set(state => ({
-      nodes: state.nodes.map(n => n.id === id ? { ...n, shape } : n)
+      nodes: state.nodes.map(n => n.id === id ? { ...n, shape, lastInteraction: Date.now(), interactionCount: (n.interactionCount || 0) + 1 } : n)
     }));
   },
   toggleSticky: (id) => {
     set(state => ({
-      nodes: state.nodes.map(n => n.id === id ? { ...n, isSticky: !n.isSticky } : n)
+      nodes: state.nodes.map(n => n.id === id ? { ...n, isSticky: !n.isSticky, lastInteraction: Date.now(), interactionCount: (n.interactionCount || 0) + 1 } : n)
+    }));
+  },
+  toggleGravityWell: (id) => {
+    set(state => ({
+      nodes: state.nodes.map(n => n.id === id ? { ...n, isGravityWell: !n.isGravityWell, lastInteraction: Date.now(), interactionCount: (n.interactionCount || 0) + 1 } : n)
     }));
   },
   mergeNodes: (targetId, sourceId) => {

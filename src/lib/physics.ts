@@ -5,6 +5,16 @@ const ATTRACTION_FORCE = 0.08;
 const SPRING_LENGTH = 150;
 const DAMPING = 0.70;
 
+const getEffectiveRadius = (n: Node): number => {
+  const baseSize = n.radius || (n.isDateNode ? 30 : (n.isCategory ? 35 : 25));
+  if (n.isSticky) {
+    // Sticky notes are drawn as squares with width = size * 4, 
+    // so the distance from center to corner is about size * 2.8.
+    return baseSize * 3;
+  }
+  return baseSize;
+};
+
 export function applyPhysics(nodes: Node[], edges: Edge[], dt: number): Node[] {
   const newNodes = nodes.map(n => ({ ...n }));
 
@@ -17,12 +27,23 @@ export function applyPhysics(nodes: Node[], edges: Edge[], dt: number): Node[] {
     for (let j = 0; j < newNodes.length; j++) {
       if (i === j) continue;
       const nodeB = newNodes[j];
+      if (nodeA.isGroup || nodeB.isGroup) continue;
       const dx = nodeA.x - nodeB.x;
       const dy = nodeA.y - nodeB.y;
       const distSq = dx * dx + dy * dy;
-      if (distSq > 0 && distSq < 160000) { // Limit repulsion distance to 400px
+      
+      const radiusA = getEffectiveRadius(nodeA);
+      const radiusB = getEffectiveRadius(nodeB);
+      
+      const safeDistance = radiusA + radiusB + 40;
+      const safeDistSq = safeDistance * safeDistance;
+      
+      if (distSq > 0 && distSq < Math.max(160000, safeDistSq * 1.5)) { 
         const dist = Math.sqrt(distSq);
-        const force = REPULSION_FORCE / distSq;
+        const overlap = Math.max(0, safeDistance - dist);
+        
+        // Base force + spike if they overlap
+        const force = (REPULSION_FORCE / distSq) + (overlap * 20);
         fx += (dx / dist) * force;
         fy += (dy / dist) * force;
       }
@@ -41,25 +62,33 @@ export function applyPhysics(nodes: Node[], edges: Edge[], dt: number): Node[] {
         const dx = otherNode.x - nodeA.x;
         const dy = otherNode.y - nodeA.y;
         const dist = Math.sqrt(dx * dx + dy * dy);
+        
+        const radiusA = getEffectiveRadius(nodeA);
+        const radiusB = getEffectiveRadius(otherNode);
+        const dynamicSpringLength = Math.max(SPRING_LENGTH, radiusA + radiusB + 50);
+
         if (dist > 0) {
-          const force = ATTRACTION_FORCE * (dist - SPRING_LENGTH);
+          const force = ATTRACTION_FORCE * (dist - dynamicSpringLength);
           fx += (dx / dist) * force;
           fy += (dy / dist) * force;
         }
       }
     });
 
-    // Gravity well attraction for Category nodes
+    // Gravity well attraction for Category or explicit Gravity Well nodes
     for (let j = 0; j < newNodes.length; j++) {
       if (i === j) continue;
       const nodeB = newNodes[j];
-      if (nodeB.isCategory && !nodeA.isCategory) {
+      if ((nodeB.isCategory || nodeB.isGravityWell) && !nodeA.isGravityWell) {
         const dx = nodeB.x - nodeA.x;
         const dy = nodeB.y - nodeA.y;
         const distSq = dx * dx + dy * dy;
-        if (distSq > 0 && distSq < 250000) { // 500px radius
+        const pullRadius = nodeB.isGravityWell ? 1000000 : 250000; // 1000px vs 500px radius
+        const pullForce = nodeB.isGravityWell ? 150 : 80;
+        
+        if (distSq > 0 && distSq < pullRadius) { 
           const dist = Math.sqrt(distSq);
-          const force = 80 / dist;
+          const force = pullForce / dist;
           fx += (dx / dist) * force;
           fy += (dy / dist) * force;
         }
@@ -87,6 +116,11 @@ export function applyPhysics(nodes: Node[], edges: Edge[], dt: number): Node[] {
 
   // Update positions
   for (let i = 0; i < newNodes.length; i++) {
+    if (newNodes[i].isLocked || newNodes[i].isGroup) {
+      newNodes[i].vx = 0;
+      newNodes[i].vy = 0;
+      continue;
+    }
     newNodes[i].x += newNodes[i].vx;
     newNodes[i].y += newNodes[i].vy;
   }

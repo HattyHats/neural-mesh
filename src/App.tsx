@@ -10,7 +10,9 @@ import { InsightsPanel } from './components/InsightsPanel';
 import { SettingsModal } from './components/SettingsModal';
 import { P2PSyncModal } from './components/P2PSyncModal';
 import { ChatBox } from './components/ChatBox';
+import { PathwayPlayer } from './components/PathwayPlayer';
 import { createStegoImage, extractStegoImage } from './lib/steganography';
+import { autoClusterNodes } from './lib/ai';
 import JSZip from 'jszip';
 import './index.css';
 
@@ -28,7 +30,7 @@ export default function App() {
   const [isReady, setIsReady] = useState(false);
   
   const [showStartup, setShowStartup] = useState(false);
-  const [startupSaveData, setStartupSaveData] = useState<any>(null);
+  const [startupSaveData, setStartupSaveData] = useState<unknown>(null);
   
   const [showPasswordPrompt, setShowPasswordPrompt] = useState(false);
   const [passwordInput, setPasswordInput] = useState('');
@@ -41,6 +43,10 @@ export default function App() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchIndex, setSearchIndex] = useState(0);
+  const [showQuickCapture, setShowQuickCapture] = useState(false);
+  const [quickCaptureText, setQuickCaptureText] = useState('');
+  const [isAiThinking, setIsAiThinking] = useState(false);
+  const [aiMessage, setAiMessage] = useState('');
 
   const { setTheme } = useGraphStore();
 
@@ -48,7 +54,7 @@ export default function App() {
     const savedTheme = localStorage.getItem('neural_mesh_theme') || 'dark';
     setTheme(savedTheme);
     document.documentElement.setAttribute('data-theme', savedTheme);
-  }, []);
+  }, [setTheme]);
 
 
   // Initialize
@@ -82,6 +88,7 @@ export default function App() {
           });
           
           setGraph(loadedNodes, data.edges || [], data.vaultSalt || null);
+          setTimeout(() => window.dispatchEvent(new CustomEvent('recenter')), 100);
           if (burn) {
             window.history.replaceState(null, '', window.location.pathname);
           }
@@ -92,7 +99,7 @@ export default function App() {
               const savedData = JSON.parse(savedStr);
               setStartupSaveData(savedData);
               setShowStartup(true);
-            } catch (e) {
+            } catch (e: unknown) {
               const key = await generateKey();
               setCryptoKey(key);
             }
@@ -101,7 +108,7 @@ export default function App() {
             setCryptoKey(key);
           }
         }
-      } catch (e) {
+      } catch (e: unknown) {
         console.error("Failed to decrypt or initialize", e);
         const key = await generateKey();
         setCryptoKey(key);
@@ -134,6 +141,14 @@ export default function App() {
     return () => window.removeEventListener('keydown', handleGlobalSearch);
   }, []);
 
+  useEffect(() => {
+    if ((window as unknown as { electronBridge?: any; handleOpenMeshFile?: any }).electronBridge?.onQuickCapture) {
+      (window as unknown as { electronBridge?: any; handleOpenMeshFile?: any }).electronBridge.onQuickCapture(() => {
+        setShowQuickCapture(true);
+      });
+    }
+  }, []);
+
   const handlePasswordSubmit = async () => {
     try {
       const { payload, burn } = parseHash();
@@ -146,12 +161,13 @@ export default function App() {
       const data = JSON.parse(jsonStr);
       setCryptoKey(key);
       setGraph(data.nodes || [], data.edges || []);
+      setTimeout(() => window.dispatchEvent(new CustomEvent('recenter')), 100);
       
       if (burn) window.history.replaceState(null, '', window.location.pathname);
       
       setShowPasswordPrompt(false);
       setIsReady(true);
-    } catch (e) {
+    } catch (e: unknown) {
       alert("Incorrect password or corrupted data.");
     }
   };
@@ -173,7 +189,7 @@ export default function App() {
   const syncTimeoutRef = useRef<number | null>(null);
   useEffect(() => {
     if (!isReady || !cryptoKey) return;
-    if (!!(window as any).electronBridge) return; // Do not use URL hash for storage in Electron
+    if ((window as unknown as { electronBridge?: any; handleOpenMeshFile?: any }).electronBridge) return; // Do not use URL hash for storage in Electron
     
     if (syncTimeoutRef.current) window.clearTimeout(syncTimeoutRef.current);
     
@@ -196,7 +212,7 @@ export default function App() {
         }
         
         updateHash(encrypted, keyStr, cryptoSalt || undefined);
-      } catch (e) {
+      } catch (e: unknown) {
         console.error("Sync failed", e);
       }
     }, 1000);
@@ -243,12 +259,12 @@ export default function App() {
             try {
                activeKey = await deriveKeyFromPassword(pwd, saltBuffer);
                useGraphStore.getState().setVault(state.vaultSalt!, activeKey);
-            } catch(e) { alert("Wrong password!"); return; }
+            } catch (e: unknown) { alert("Wrong password!"); return; }
          }
          try {
            const decryptedText = await decryptPayload(activeKey, node.text);
            useGraphStore.getState().unlockNode(node.id, decryptedText);
-         } catch(e) { alert("Failed to decrypt."); }
+         } catch (e: unknown) { alert("Failed to decrypt."); }
       }
       return;
     }
@@ -319,12 +335,78 @@ export default function App() {
     
     let isLocked = false;
     let isCategory = false;
+    let isGroup = false;
+
+    if (text === '/cluster') {
+       setFloatingInput(null);
+       setInputValue('');
+       try {
+         setIsAiThinking(true);
+         setAiMessage("Clustering thoughts...");
+         const state = useGraphStore.getState();
+         const nodesToCluster = state.nodes.filter(n => !n.isDateNode && !n.isGroup && !n.isCategory && !n.isGhost);
+         
+         const clusters = await autoClusterNodes(
+           nodesToCluster.map(n => ({ id: n.id, text: n.text })), 
+           (msg) => setAiMessage(msg)
+         );
+         
+         const spreadRadius = 500;
+         const startX = floatingInput.x;
+         const startY = floatingInput.y;
+         
+         clusters.forEach((cluster, idx) => {
+            if (cluster.nodeIds.length === 0) return;
+            const angle = (idx / clusters.length) * Math.PI * 2;
+            const clusterX = startX + Math.cos(angle) * spreadRadius;
+            const clusterY = startY + Math.sin(angle) * spreadRadius;
+            
+            // Create a Group Node for the cluster
+            const groupId = crypto.randomUUID();
+            addNode({
+               id: groupId,
+               text: cluster.category,
+               x: clusterX,
+               y: clusterY,
+               vx: 0, vy: 0,
+               date: todayStr,
+               isGroup: true,
+               width: 350,
+               height: 350
+            });
+            
+            // Move nodes to cluster location
+            cluster.nodeIds.forEach((nid, i) => {
+               const node = state.nodes.find(n => n.id === nid);
+               if (node && !node.isLocked) {
+                  const nodeAngle = (i / cluster.nodeIds.length) * Math.PI * 2;
+                  const offsetR = 100 * Math.random();
+                  node.x = clusterX + Math.cos(nodeAngle) * offsetR;
+                  node.y = clusterY + Math.sin(nodeAngle) * offsetR;
+               }
+            });
+         });
+         
+         window.dispatchEvent(new CustomEvent('recenter'));
+         setTimeout(syncGraph, 100);
+       } catch (e: unknown) {
+         alert("Clustering failed: " + (e as Error).message);
+       } finally {
+         setIsAiThinking(false);
+         setAiMessage("");
+       }
+       return;
+    }
+
     if (text.startsWith('/lock ')) {
        isLocked = true;
        text = text.replace('/lock ', '');
     } else if (text.startsWith('/group ')) {
        isCategory = true;
        text = text.replace('/group ', '');
+    } else if (text.startsWith('/box ')) {
+       isGroup = true;
+       text = text.replace('/box ', '');
     }
 
     const tagMatch = text.match(/\[\[(.*?)\]\]/);
@@ -336,6 +418,7 @@ export default function App() {
 
     let color = undefined;
     let imageUrl = undefined;
+    let embedUrl = undefined;
     if (text.startsWith('/red ')) { color = '#ef4444'; text = text.replace('/red ', ''); }
     else if (text.startsWith('/blue ')) { color = '#3b82f6'; text = text.replace('/blue ', ''); }
     else if (text.startsWith('/green ')) { color = '#22c55e'; text = text.replace('/green ', ''); }
@@ -344,6 +427,15 @@ export default function App() {
        const parts = text.split(' ');
        imageUrl = parts[1];
        text = parts.slice(2).join(' ');
+    } else if (text.startsWith('/embed ')) {
+       const parts = text.split(' ');
+       embedUrl = parts[1];
+       if (embedUrl.includes('youtube.com/watch?v=')) {
+          embedUrl = embedUrl.replace('watch?v=', 'embed/');
+       } else if (embedUrl.includes('youtu.be/')) {
+          embedUrl = embedUrl.replace('youtu.be/', 'youtube.com/embed/');
+       }
+       text = parts.slice(2).join(' ') || "Embed";
     } else {
        const ytMatch = text.match(/(?:https?:\/\/(?:www\.)?)?(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/i);
        if (ytMatch) {
@@ -376,7 +468,7 @@ export default function App() {
           try {
             activeVaultKey = await deriveKeyFromPassword(pwd, saltBuffer);
             useGraphStore.getState().setVault(state.vaultSalt, activeVaultKey);
-          } catch(e) {
+          } catch (e: unknown) {
             alert("Wrong password!"); return;
           }
        }
@@ -395,20 +487,18 @@ export default function App() {
         addNode(targetNode);
       }
       
-      addNode({ id: newId, text: text || 'New Node', x: floatingInput.x, y: floatingInput.y, vx: 0, vy: 0, date: todayStr, color, imageUrl, isLocked, isCategory });
+      addNode({ id: newId, text: text || 'New Node', x: floatingInput.x, y: floatingInput.y, vx: 0, vy: 0, date: todayStr, color, imageUrl, embedUrl, isLocked, isCategory, isGroup, parentId: useGraphStore.getState().currentParentId || undefined });
       addEdge(newId, targetNode.id);
     } else {
-      addNode({ id: newId, text: text || 'New Node', x: floatingInput.x, y: floatingInput.y, vx: 0, vy: 0, date: todayStr, color, imageUrl, isLocked, isCategory });
+      addNode({ id: newId, text: text || 'New Node', x: floatingInput.x, y: floatingInput.y, vx: 0, vy: 0, date: todayStr, color, imageUrl, embedUrl, isLocked, isCategory, isGroup, parentId: useGraphStore.getState().currentParentId || undefined });
     }
 
-    // Auto connect to Date Node
-    const todayDateNode = getOrCreateDateNode(todayStr, floatingInput.x, floatingInput.y);
-    addEdge(newId, todayDateNode.id);
+    // Ensure the Date Node exists for today, but do NOT automatically connect it
+    // to prevent visual clutter and give users complete organizational control.
+    getOrCreateDateNode(todayStr, floatingInput.x, floatingInput.y);
 
-    // If selectedDate is active and different from today, connect to that Date Node too
     if (selectedDate && selectedDate !== todayStr) {
-      const selectedDateNode = getOrCreateDateNode(selectedDate, floatingInput.x, floatingInput.y);
-      addEdge(newId, selectedDateNode.id);
+      getOrCreateDateNode(selectedDate, floatingInput.x, floatingInput.y);
     }
     
     setFloatingInput(null);
@@ -477,7 +567,7 @@ export default function App() {
       a.href = dataUrl;
       a.download = `neural-mesh-stego-${new Date().toISOString().split('T')[0]}.png`;
       a.click();
-    } catch (e) {
+    } catch (e: unknown) {
       console.error(e);
       alert("Failed to create steganography image.");
     }
@@ -495,7 +585,7 @@ export default function App() {
           const stegoData = await extractStegoImage(event.target?.result as string);
           window.location.hash = '#' + stegoData;
           window.location.reload();
-        } catch (err) {
+        } catch (e: unknown) {
           handleImageUpload(file);
         }
       };
@@ -536,18 +626,16 @@ export default function App() {
           x: 0, y: 0,
           vx: (Math.random() - 0.5) * 2,
           vy: (Math.random() - 0.5) * 2,
-          date: today
+          date: today,
+          parentId: useGraphStore.getState().currentParentId || undefined
         });
 
         const { nodes } = useGraphStore.getState();
         if (selectedDate) {
           const dateNode = nodes.find(n => n.text === today && n.isDateNode);
-          if (dateNode) {
-            addEdge(dateNode.id, id);
-          } else {
+          if (!dateNode) {
             const dateNodeId = `date-${today}`;
             addNode({ id: dateNodeId, text: today, x: -100, y: -100, isDateNode: true, date: today, vx: 0, vy: 0 });
-            addEdge(dateNodeId, id);
           }
         }
       };
@@ -583,6 +671,7 @@ export default function App() {
                 const payload = JSON.parse(payloadStr);
                 if (payload.type === 'NEURAL_MESH_EXPORT') {
                   useGraphStore.getState().setGraph(payload.nodes, payload.edges, payload.vaultSalt);
+                  setTimeout(() => window.dispatchEvent(new CustomEvent('recenter')), 100);
                 }
               }).catch(() => handleImageUpload(file));
             } else {
@@ -604,6 +693,21 @@ export default function App() {
       >
         <style>{`.no-scrollbar::-webkit-scrollbar { display: none; }`}</style>
         
+        {useGraphStore.getState().currentParentId && (
+          <div style={{ position: 'fixed', top: '20px', left: '50%', transform: 'translateX(-50%)', zIndex: 50, background: 'rgba(24,24,27,0.8)', backdropFilter: 'blur(10px)', padding: '10px 20px', borderRadius: '20px', border: '1px solid #3f3f46', display: 'flex', alignItems: 'center', gap: '15px' }}>
+             <button 
+                onClick={() => useGraphStore.getState().setCurrentParentId(null)}
+                style={{ background: 'transparent', border: 'none', color: '#a1a1aa', cursor: 'pointer', fontSize: '14px', fontWeight: 600 }}
+             >
+               Root Canvas
+             </button>
+             <span style={{ color: '#3f3f46' }}>/</span>
+             <span style={{ color: '#fff', fontSize: '14px', fontWeight: 600 }}>
+               {useGraphStore.getState().nodes.find(n => n.id === useGraphStore.getState().currentParentId)?.text || 'Nested Canvas'}
+             </span>
+          </div>
+        )}
+
         <div className="sidebar-section-title">Application</div>
         
         <button className="btn-pill" onClick={() => setIsIncognito(!isIncognito)}>
@@ -621,7 +725,7 @@ export default function App() {
           Insights
         </button>
 
-        {!((window as any).electronBridge) && (
+        {!((window as unknown as { electronBridge?: any; handleOpenMeshFile?: any }).electronBridge) && (
           <>
             <div className="sidebar-section-title">Security</div>
             
@@ -642,7 +746,7 @@ export default function App() {
           </>
         )}
 
-        {!!(window as any).electronBridge && (
+        {!!(window as unknown as { electronBridge?: any; handleOpenMeshFile?: any }).electronBridge && (
           <>
             <div className="sidebar-section-title">Security</div>
             
@@ -718,14 +822,14 @@ export default function App() {
           Obsidian Vault
         </button>
 
-        {!!(window as any).electronBridge && (
+        {!!(window as unknown as { electronBridge?: any; handleOpenMeshFile?: any }).electronBridge && (
           <>
             <button 
               className="btn-pill success"
               onClick={async () => {
                 const state = useGraphStore.getState();
                 const data = JSON.stringify({ nodes: state.nodes, edges: state.edges, vaultSalt: state.vaultSalt });
-                await (window as any).electronBridge.saveMeshFile(data);
+                await (window as unknown as { electronBridge?: any; handleOpenMeshFile?: any }).electronBridge.saveMeshFile(data);
               }}
             >
               <Save size={18} />
@@ -734,10 +838,11 @@ export default function App() {
             <button 
               className="btn-pill success"
               onClick={async () => {
-                const data = await (window as any).electronBridge.openMeshFile();
+                const data = await (window as unknown as { electronBridge?: any; handleOpenMeshFile?: any }).electronBridge.openMeshFile();
                 if (data) {
                   const payload = JSON.parse(data);
                   useGraphStore.getState().setGraph(payload.nodes, payload.edges, payload.vaultSalt);
+                  setTimeout(() => window.dispatchEvent(new CustomEvent('recenter')), 100);
                 }
               }}
             >
@@ -778,20 +883,23 @@ export default function App() {
             
             <h3 style={{ color: '#fff', borderBottom: '1px solid #3f3f46', paddingBottom: '10px' }}>General Features</h3>
             <ul style={{ lineHeight: '1.6', marginBottom: '25px' }}>
+              <li><strong>Lasso Selection:</strong> Hold <strong>Shift</strong> and drag over the canvas to draw a selection box. All selected thoughts can be dragged simultaneously.</li>
+              <li><strong>Live AI Clustering:</strong> Type <code>/cluster</code> to let the local AI read all your thoughts, group them into semantic categories, and physically organize them into bounding boxes.</li>
               <li><strong>Deep Thoughts:</strong> Select a thought and press the 'Edit' button in the bottom right to open the Markdown editor. You can drag and drop images directly into the text!</li>
               <li><strong>Node Merging:</strong> Drag and hold one thought over another to fuse them together.</li>
               <li><strong>Multiplayer P2P:</strong> Click 'Sync P2P' to generate a handshake link. Your friends can join your session via WebRTC to view live cursors, chat instantly, and collaborate in real-time.</li>
-              <li><strong>Native Saving:</strong> Use the <code>Save .mesh</code> and <code>Load .mesh</code> buttons to save your brain locally to your computer.</li>
               <li><strong>Privacy & Security:</strong> Everything is completely offline. Auto-saves continuously back up your brain to your local storage, and the AI Brainstorming runs locally via WebGPU!</li>
             </ul>
 
             <h3 style={{ color: '#fff', borderBottom: '1px solid #3f3f46', paddingBottom: '10px' }}>Controls & Commands</h3>
             <ul style={{ lineHeight: '1.6' }}>
               <li><strong>Thought Creation:</strong> Double-Click anywhere to create a thought. Double-Click a thought to edit its title.</li>
-              <li><strong>Manual Connections:</strong> Hold <strong>Shift</strong> and drag from one thought to another to connect them.</li>
+              <li><strong>Manual Connections:</strong> Hold <strong>Shift</strong> and drag from one thought to another to connect them. Directed arrows will appear pointing to the target.</li>
+              <li><strong>Bounding Boxes:</strong> Type <code>/box [Name]</code> to spawn a spatial glassmorphic group container. Dragging the box drags all contained thoughts!</li>
+              <li><strong>Live Web Embeds:</strong> Type <code>/embed [URL]</code> (like a YouTube video link) to spawn a fully interactive, synced HTML iframe on the mesh!</li>
               <li><strong>Auto-Tagging:</strong> Type <code>[[Tag Name]]</code> inside a thought's title to automatically connect it to an overarching Category Node.</li>
               <li><strong>Color Commands:</strong> Start a thought's title with <code>/red</code>, <code>/blue</code>, or <code>/green</code> to change its color.</li>
-              <li><strong>Rich Media:</strong> Simply type or paste a direct Image link or YouTube video link to instantly render it as a floating thumbnail!</li>
+              <li><strong>Rich Media:</strong> Type or paste a direct image link (or use <code>/img [URL]</code>) to instantly render it as a floating thumbnail!</li>
               <li><strong>Search Teleport:</strong> Press <code>Cmd+K</code> (or Ctrl+K) to instantly search and teleport to any thought.</li>
             </ul>
 
@@ -910,6 +1018,55 @@ export default function App() {
           </div>
         </div>
       )}
+      {showQuickCapture && (
+        <div 
+          onClick={() => setShowQuickCapture(false)}
+          style={{
+            position: 'absolute', top: 0, left: 0, width: '100vw', height: '100vh',
+            background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)', zIndex: 10000,
+            display: 'flex', justifyContent: 'center', paddingTop: '150px'
+          }}
+        >
+          <div 
+            onClick={e => e.stopPropagation()}
+            style={{ width: '100%', maxWidth: '600px', background: '#18181b', borderRadius: '16px', border: '1px solid #3b82f6', overflow: 'hidden', padding: '20px', boxShadow: '0 20px 40px rgba(0,0,0,0.5)' }}
+          >
+            <h3 style={{ color: '#3b82f6', margin: '0 0 15px 0', display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <BrainCircuit size={20} />
+              Quick Capture
+            </h3>
+            <input 
+              autoFocus
+              value={quickCaptureText}
+              onChange={e => setQuickCaptureText(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Escape') setShowQuickCapture(false);
+                if (e.key === 'Enter' && quickCaptureText.trim()) {
+                  const todayStr = selectedDate || new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).replace(/ /g, '/').replace(',', '');
+                  useGraphStore.getState().addNode({
+                     id: crypto.randomUUID(),
+                     text: quickCaptureText,
+                     x: (Math.random() - 0.5) * 400,
+                     y: (Math.random() - 0.5) * 400,
+                     vx: 0, vy: 0,
+                     date: todayStr,
+                     parentId: useGraphStore.getState().currentParentId || undefined
+                  });
+                  setQuickCaptureText('');
+                  setShowQuickCapture(false);
+                  setTimeout(syncGraph, 100);
+                }
+              }}
+              placeholder="What's on your mind? (Press Enter to save)"
+              style={{ width: '100%', background: '#27272a', border: '1px solid #3f3f46', borderRadius: '8px', padding: '15px', color: '#fff', fontSize: '18px', outline: 'none' }}
+            />
+            <div style={{ color: '#a1a1aa', fontSize: '12px', marginTop: '10px', textAlign: 'right' }}>
+              Press Esc to cancel
+            </div>
+          </div>
+        </div>
+      )}
+
 
       {showStartup && (
         <div style={{
@@ -935,9 +1092,10 @@ export default function App() {
               <button 
                 onClick={async () => {
                   if (startupSaveData) {
-                    setGraph(startupSaveData.nodes || [], startupSaveData.edges || [], startupSaveData.vaultSalt);
-                    if (startupSaveData.vaultSalt) {
-                       setCryptoSalt(startupSaveData.vaultSalt);
+                    setGraph((startupSaveData as any).nodes || [], (startupSaveData as any).edges || [], (startupSaveData as any).vaultSalt);
+                    setTimeout(() => window.dispatchEvent(new CustomEvent('recenter')), 100);
+                    if ((startupSaveData as any).vaultSalt) {
+                       setCryptoSalt((startupSaveData as any).vaultSalt);
                        setShowPasswordPrompt(true);
                     } else {
                        const key = await generateKey();
@@ -968,7 +1126,7 @@ export default function App() {
         </div>
       )}
 
-      {urlWarning && !(window as any).electronBridge && (
+      {urlWarning && !(window as unknown as { electronBridge?: any; handleOpenMeshFile?: any }).electronBridge && (
         <div style={{
           position: 'absolute', top: 20, right: 20, zIndex: 10,
           background: '#854d0e', color: '#fef08a',
@@ -980,12 +1138,49 @@ export default function App() {
         </div>
       )}
 
+      {isAiThinking && (
+        <div style={{
+          position: 'absolute', top: 20, left: '50%', transform: 'translateX(-50%)', zIndex: 50,
+          background: 'rgba(24, 24, 27, 0.8)', backdropFilter: 'blur(10px)',
+          border: '1px solid #3b82f6', borderRadius: '20px', padding: '10px 20px',
+          color: '#fff', display: 'flex', alignItems: 'center', gap: '10px', boxShadow: '0 0 15px rgba(59, 130, 246, 0.5)'
+        }}>
+          <BrainCircuit size={18} color="#3b82f6" className="spin-slow" />
+          <span style={{ fontWeight: 600 }}>{aiMessage || 'AI is thinking...'}</span>
+        </div>
+      )}
+
+      {/* Live Embed Overlays */}
+      <div style={{ position: 'absolute', top: 0, left: 0, pointerEvents: 'none', zIndex: 5, width: '100vw', height: '100vh', overflow: 'hidden' }}>
+        {nodes.filter(n => n.embedUrl).map(n => (
+          <div 
+            key={n.id} 
+            data-embed-id={n.id}
+            style={{ 
+               position: 'absolute', 
+               top: 0, left: 0, 
+               width: 320, height: 180, 
+               pointerEvents: 'auto',
+               borderRadius: '12px',
+               overflow: 'hidden',
+               boxShadow: '0 20px 40px -10px rgba(0,0,0,0.8)',
+               border: '1px solid rgba(255,255,255,0.1)',
+               background: '#000',
+               transform: 'translate(-9999px, -9999px)' // hidden until synced
+            }}
+          >
+            <iframe src={n.embedUrl} width="100%" height="100%" frameBorder="0" allowFullScreen />
+          </div>
+        ))}
+      </div>
+
       {/* Zoom UI Widget */}
       <div style={{
         position: 'absolute', bottom: 30, right: 30, zIndex: 10,
         display: 'flex', flexDirection: 'column', gap: '8px',
-        background: 'rgba(24, 24, 27, 0.7)', backdropFilter: 'blur(10px)',
-        padding: '8px', borderRadius: '12px', border: '1px solid rgba(63, 63, 70, 0.5)'
+        background: 'rgba(24, 24, 27, 0.4)', backdropFilter: 'blur(30px)', WebkitBackdropFilter: 'blur(30px)',
+        padding: '8px', borderRadius: '16px', border: '1px solid rgba(255, 255, 255, 0.08)',
+        boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.5)'
       }}>
         <button onClick={() => window.dispatchEvent(new CustomEvent('zoomIn'))} style={{ background: 'transparent', border: 'none', color: '#fff', cursor: 'pointer', padding: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="Zoom In">
           <ZoomIn size={20} />
@@ -1007,11 +1202,13 @@ export default function App() {
           top: floatingInput.screenY - 20,
           left: floatingInput.screenX - 100,
           zIndex: 20,
-          background: '#18181b',
-          border: '1px solid #3f3f46',
-          padding: '8px',
-          borderRadius: '8px',
-          boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.5)'
+          background: 'rgba(24, 24, 27, 0.4)',
+          backdropFilter: 'blur(30px)',
+          WebkitBackdropFilter: 'blur(30px)',
+          border: '1px solid rgba(255, 255, 255, 0.08)',
+          padding: '12px',
+          borderRadius: '16px',
+          boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)'
         }}>
           <input
             autoFocus
@@ -1030,11 +1227,12 @@ export default function App() {
               outline: 'none',
               width: '200px',
               fontSize: '16px',
-              fontFamily: 'Inter, sans-serif'
             }}
           />
         </div>
       )}
+
+      <PathwayPlayer />
     </div>
   );
 }

@@ -1,13 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { useGraphStore } from '../store/useGraphStore';
 import { syncGraph } from '../lib/webrtc';
-import { X, Save, Maximize2, Eye, Edit3, BrainCircuit, Trash2 } from 'lucide-react';
+import { X, Save, Maximize2, Eye, Edit3, BrainCircuit, Trash2, ZoomIn, Link } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { brainstormConcept } from '../lib/ai';
+import { brainstormConcept, findGhostLinks, devilsAdvocate } from '../lib/ai';
 
 export function MarkdownEditor() {
-  const { selectedNodeId, setSelectedNodeId, updateNodeDetails, updateNodeRadius, updateNodeStyle, updateNodeShape, toggleSticky } = useGraphStore();
+  const { selectedNodeId, setSelectedNodeId, updateNodeDetails, updateNodeRadius, updateNodeStyle, updateNodeShape, toggleSticky, setCurrentParentId, toggleGravityWell, pathway, setPathway } = useGraphStore();
   
   const [text, setText] = useState('');
   const [radius, setRadius] = useState(25);
@@ -15,6 +15,7 @@ export function MarkdownEditor() {
   const [nodeColor, setNodeColor] = useState('#8b5cf6');
   const [nodeShape, setNodeShape] = useState<'circle' | 'square' | 'hexagon' | 'triangle'>('circle');
   const [isSticky, setIsSticky] = useState(false);
+  const [isGravityWell, setIsGravityWell] = useState(false);
   const [youtubeId, setYoutubeId] = useState<string | null>(null);
   const [nodeTitle, setNodeTitle] = useState('');
   const [isPreview, setIsPreview] = useState(false);
@@ -44,14 +45,95 @@ export function MarkdownEditor() {
               x: baseNode.x + Math.cos(angle) * dist,
               y: baseNode.y + Math.sin(angle) * dist,
               vx: 0, vy: 0,
-              date: baseNode.date
+              date: baseNode.date,
+              parentId: state.currentParentId || undefined
             });
             state.addEdge(baseNode.id, newId);
           });
         }
       }
-    } catch (e: any) {
-      alert("AI Error: " + e.message);
+    } catch (e: unknown) {
+      alert("AI Error: " + (e as Error).message);
+    }
+    setIsAiLoading(false);
+    setAiProgress('');
+  };
+
+  const startGhostLinks = async () => {
+    setShowAiWarning(false);
+    setIsAiLoading(true);
+    setAiProgress("Starting local AI engine...");
+    try {
+      const state = useGraphStore.getState();
+      const allNodeTitles = state.nodes.filter(n => n.id !== selectedNodeId && n.text && !n.isDateNode).map(n => n.text);
+      if (allNodeTitles.length === 0) throw new Error("No other thoughts available to link to.");
+
+      const linkedTitles = await findGhostLinks(nodeTitle, allNodeTitles, setAiProgress);
+      if (linkedTitles.length > 0) {
+        const confirmMsg = `AI found the following conceptual links:\n\n${linkedTitles.map(t => `- ${t}`).join('\n')}\n\nDo you want to connect them?`;
+        if (window.confirm(confirmMsg)) {
+          useGraphStore.getState().saveHistory();
+          const baseNode = state.nodes.find(n => n.id === selectedNodeId);
+          if (baseNode) {
+            linkedTitles.forEach(title => {
+              const targetNode = state.nodes.find(n => n.text === title);
+              if (targetNode) {
+                const existingEdge = state.edges.find(e => (e.source === baseNode.id && e.target === targetNode.id) || (e.target === baseNode.id && e.source === targetNode.id));
+                if (!existingEdge) {
+                  state.addEdge(baseNode.id, targetNode.id);
+                  // Mark edge as ghost
+                  useGraphStore.setState(s => ({
+                    edges: s.edges.map(e => (e.source === baseNode.id && e.target === targetNode.id) ? { ...e, isGhost: true } : e)
+                  }));
+                }
+              }
+            });
+            setTimeout(syncGraph, 100);
+          }
+        }
+      } else {
+        alert("No serendipitous links found.");
+      }
+    } catch (e: unknown) {
+      alert("AI Error: " + (e as Error).message);
+    }
+    setIsAiLoading(false);
+    setAiProgress('');
+  };
+
+  const startDevilsAdvocate = async () => {
+    setShowAiWarning(false);
+    setIsAiLoading(true);
+    setAiProgress("Starting local AI engine...");
+    try {
+      const critiques = await devilsAdvocate(nodeTitle, setAiProgress);
+      if (critiques.length > 0) {
+        const state = useGraphStore.getState();
+        const baseNode = state.nodes.find(n => n.id === selectedNodeId);
+        if (baseNode) {
+          critiques.forEach((critique, i) => {
+            const newId = crypto.randomUUID();
+            const angle = (i * Math.PI) + Math.PI / 2; // spawn top and bottom
+            const dist = 180;
+            state.addNode({
+              id: newId,
+              text: "Devil's Advocate",
+              details: critique,
+              x: baseNode.x + Math.cos(angle) * dist,
+              y: baseNode.y + Math.sin(angle) * dist,
+              vx: 0, vy: 0,
+              date: baseNode.date,
+              color: '#ea580c', // Dark orange for devil's advocate
+              shape: 'square',
+              parentId: state.currentParentId || undefined
+            });
+            state.addEdge(baseNode.id, newId);
+          });
+          setTimeout(syncGraph, 100);
+        }
+      }
+    } catch (e: unknown) {
+      alert("AI Error: " + (e as Error).message);
     }
     setIsAiLoading(false);
     setAiProgress('');
@@ -61,16 +143,21 @@ export function MarkdownEditor() {
     if (selectedNodeId) {
       const n = useGraphStore.getState().nodes.find(x => x.id === selectedNodeId);
       if (n) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setText(n.details || '');
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setRadius(n.radius || 25);
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setIsImage(!!n.imageUrl);
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setNodeColor(n.color || (n.isDateNode ? '#27272a' : '#8b5cf6'));
         setNodeShape(n.shape || 'circle');
         setIsSticky(!!n.isSticky);
+        setIsGravityWell(!!n.isGravityWell);
         setNodeTitle(n.text || (n.imageUrl?.includes('youtube.com') ? 'YouTube Video' : 'Image Bubble'));
         
         if (n.imageUrl) {
-          const ytMatch = n.imageUrl.match(/img\.youtube\.com\/vi\/([^\/]+)/);
+          const ytMatch = n.imageUrl.match(/img\.youtube\.com\/vi\/([^/]+)/);
           setYoutubeId(ytMatch ? ytMatch[1] : null);
         } else {
           setYoutubeId(null);
@@ -127,10 +214,10 @@ export function MarkdownEditor() {
       onDragLeave={e => { e.preventDefault(); e.stopPropagation(); }}
       onDrop={handleDrop}
       style={{
-      position: 'absolute', right: 0, top: 0, width: '450px', height: '100vh',
-      background: 'rgba(24, 24, 27, 0.95)', backdropFilter: 'blur(10px)',
-      borderLeft: '1px solid #3f3f46', zIndex: 400, display: 'flex', flexDirection: 'column',
-      color: '#fff', boxShadow: '-4px 0 15px rgba(0,0,0,0.5)'
+      position: 'absolute', right: 20, top: 20, width: '450px', height: 'calc(100vh - 40px)',
+      background: 'rgba(24, 24, 27, 0.4)', backdropFilter: 'blur(30px)', WebkitBackdropFilter: 'blur(30px)',
+      border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '24px', zIndex: 400, display: 'flex', flexDirection: 'column',
+      color: '#fff', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)'
     }}>
       <div style={{ padding: '20px', borderBottom: '1px solid #3f3f46', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 600, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{nodeTitle}</h3>
@@ -222,6 +309,32 @@ export function MarkdownEditor() {
             style={{ background: isSticky ? 'var(--accent-primary)' : 'transparent', border: '1px solid #3f3f46', borderRadius: '4px', color: isSticky ? '#fff' : '#e4e4e7', fontSize: '12px', padding: '4px 8px', cursor: 'pointer', transition: 'all 0.2s' }}
           >
             {isSticky ? 'Sticky Note: ON' : 'Sticky Note: OFF'}
+          </button>
+          <button 
+            onClick={() => {
+              if (selectedNodeId) {
+                toggleGravityWell(selectedNodeId);
+                setIsGravityWell(!isGravityWell);
+                setTimeout(syncGraph, 100);
+              }
+            }}
+            style={{ background: isGravityWell ? 'var(--accent-primary)' : 'transparent', border: '1px solid #3f3f46', borderRadius: '4px', color: isGravityWell ? '#fff' : '#e4e4e7', fontSize: '12px', padding: '4px 8px', cursor: 'pointer', transition: 'all 0.2s' }}
+          >
+            {isGravityWell ? 'Gravity Well: ON' : 'Gravity Well: OFF'}
+          </button>
+          <button 
+            onClick={() => {
+              if (selectedNodeId) {
+                if (pathway.includes(selectedNodeId)) {
+                  setPathway(pathway.filter(id => id !== selectedNodeId));
+                } else {
+                  setPathway([...pathway, selectedNodeId]);
+                }
+              }
+            }}
+            style={{ background: pathway.includes(selectedNodeId || '') ? '#0ea5e9' : 'transparent', border: '1px solid #3f3f46', borderRadius: '4px', color: pathway.includes(selectedNodeId || '') ? '#fff' : '#e4e4e7', fontSize: '12px', padding: '4px 8px', cursor: 'pointer', transition: 'all 0.2s' }}
+          >
+            {pathway.includes(selectedNodeId || '') ? 'In Pathway' : '+ Pathway'}
           </button>
         </div>
       </div>
@@ -318,9 +431,9 @@ export function MarkdownEditor() {
           />
         )}
       </div>
-      <div style={{ padding: '20px', borderTop: '1px solid #3f3f46', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <div style={{ padding: '20px', borderTop: '1px solid #3f3f46', display: 'flex', flexWrap: 'wrap', gap: '10px', justifyContent: 'space-between', alignItems: 'center' }}>
         
-        <div style={{ display: 'flex', gap: '10px' }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
           <button 
             onClick={() => setShowAiWarning(true)}
             style={{
@@ -332,7 +445,44 @@ export function MarkdownEditor() {
             <BrainCircuit size={18} />
             Brainstorm
           </button>
+
+          <button 
+            onClick={startDevilsAdvocate}
+            style={{
+              display: 'flex', alignItems: 'center', gap: '8px', background: '#ea580c', color: '#fff',
+              border: 'none', padding: '10px 16px', borderRadius: '8px', cursor: 'pointer', fontWeight: 600
+            }}
+            title="Generate counter-arguments using AI"
+          >
+            <BrainCircuit size={18} />
+            Devil's Advocate
+          </button>
+
+          <button 
+            onClick={startGhostLinks}
+            style={{
+              display: 'flex', alignItems: 'center', gap: '8px', background: '#d946ef', color: '#fff',
+              border: 'none', padding: '10px 16px', borderRadius: '8px', cursor: 'pointer', fontWeight: 600
+            }}
+            title="Find serendipitous ghost links"
+          >
+            <Link size={18} />
+          </button>
           
+          <button 
+            onClick={() => {
+              setCurrentParentId(selectedNodeId);
+              setSelectedNodeId(null);
+            }}
+            style={{
+              display: 'flex', alignItems: 'center', gap: '8px', background: '#10b981', color: '#fff',
+              border: 'none', padding: '10px 16px', borderRadius: '8px', cursor: 'pointer', fontWeight: 600
+            }}
+            title="Dive into this node to map concepts inside it"
+          >
+            <ZoomIn size={18} />
+          </button>
+
           <button 
             onClick={() => {
                if (window.confirm("Are you sure you want to delete this thought?")) {

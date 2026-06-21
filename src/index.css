@@ -2,8 +2,8 @@
 
 :root {
   --bg-color: #09090b;
-  --panel-bg: rgba(24, 24, 27, 0.95);
-  --border-color: #3f3f46;
+  --panel-bg: rgba(24, 24, 27, 0.4);
+  --border-color: rgba(255, 255, 255, 0.08);
   --text-primary: #ffffff;
   --text-secondary: #a1a1aa;
   --accent-primary: #3b82f6;
@@ -12,8 +12,8 @@
 
 [data-theme="light"] {
   --bg-color: #f4f4f5;
-  --panel-bg: rgba(255, 255, 255, 0.95);
-  --border-color: #d4d4d8;
+  --panel-bg: rgba(255, 255, 255, 0.6);
+  --border-color: rgba(0, 0, 0, 0.08);
   --text-primary: #18181b;
   --text-secondary: #52525b;
   --accent-primary: #2563eb;
@@ -22,7 +22,7 @@
 
 [data-theme="cyberpunk"] {
   --bg-color: #0d0221;
-  --panel-bg: rgba(26, 5, 41, 0.95);
+  --panel-bg: rgba(26, 5, 41, 0.6);
   --border-color: #f000ff;
   --text-primary: #00ffff;
   --text-secondary: #ff0055;
@@ -32,7 +32,7 @@
 
 [data-theme="ocean"] {
   --bg-color: #001f3f;
-  --panel-bg: rgba(0, 43, 85, 0.95);
+  --panel-bg: rgba(0, 43, 85, 0.6);
   --border-color: #0074d9;
   --text-primary: #7fdbff;
   --text-secondary: #39cccc;
@@ -69,15 +69,15 @@ body, html {
   border-radius: 999px;
   border: 1px solid var(--border-color);
   background: var(--panel-bg);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(30px);
+  -webkit-backdrop-filter: blur(30px);
   color: var(--text-primary);
   font-size: 14px;
   font-weight: 500;
   font-family: 'Inter', sans-serif;
   cursor: pointer;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
 }
 
 .btn-pill:hover {
