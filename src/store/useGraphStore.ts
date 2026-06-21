@@ -59,7 +59,6 @@ export interface GraphState {
   isPathwayPlaying: boolean;
   setPathway: (pathway: string[]) => void;
   setIsPathwayPlaying: (playing: boolean) => void;
-  timeFilter: number | null;
   setTimeFilter: (time: number | null) => void;
   peerCursor: { x: number, y: number } | null;
   peerCursors: Record<string, { x: number, y: number, name: string }>;
@@ -115,6 +114,7 @@ export const useGraphStore = create<GraphState>((set) => ({
   vaultSalt: null,
   vaultKey: null,
   focusNode: null,
+  activeFocusId: null,
   timeFilter: null,
   currentParentId: null,
   setCurrentParentId: (id) => set({ currentParentId: id }),
