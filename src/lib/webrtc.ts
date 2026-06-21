@@ -25,7 +25,7 @@ export const initP2P = (onStatus: (msg: string) => void, onMessage: (data: any) 
     useGraphStore.getState().setIsP2PConnected(true);
   };
   const handleDisconnect = () => {
-    useGraphStore.getState().setPeerCursor(null);
+    useGraphStore.getState().updatePeerCursor('peer1', null);
     useGraphStore.getState().setPeerLockedNode(null);
     useGraphStore.getState().setIsP2PConnected(false);
   };
@@ -81,11 +81,11 @@ export const receiveAnswer = async (answerBase64: string) => {
 export const syncGraph = () => {
   if (!dataChannel || dataChannel.readyState !== 'open') return;
   
-  const { nodes, edges } = useGraphStore.getState();
+  const { nodes, edges, quickPadUrl } = useGraphStore.getState();
   
   // Zero-Knowledge: If a node is locked, its text/details are stored as ciphertext in state.
   // Therefore sending the state array as-is transmits encrypted data that cannot be read without the vault key!
-  const payload = { type: 'SYNC', nodes, edges };
+  const payload = { type: 'SYNC', nodes, edges, quickPadUrl };
   
   dataChannel.send(JSON.stringify(payload));
 };
@@ -94,9 +94,9 @@ export const handleSyncMessage = (data: any) => {
   const store = useGraphStore.getState();
   
   if (data.type === 'SYNC') {
-    store.mergeGraph(data.nodes, data.edges);
+    store.mergeGraph(data.nodes, data.edges, data.quickPadUrl);
   } else if (data.type === 'CURSOR') {
-    store.setPeerCursor({ x: data.x, y: data.y });
+    store.updatePeerCursor('peer1', { x: data.x, y: data.y, name: data.name || 'Friend' });
   } else if (data.type === 'NODE_MOVE') {
     const node = store.nodes.find(n => n.id === data.id);
     if (node) {
@@ -110,9 +110,9 @@ export const handleSyncMessage = (data: any) => {
   }
 };
 
-export const broadcastCursor = (x: number, y: number) => {
+export const broadcastCursor = (x: number, y: number, name: string = 'Friend') => {
   if (dataChannel?.readyState === 'open') {
-    dataChannel.send(JSON.stringify({ type: 'CURSOR', x, y }));
+    dataChannel.send(JSON.stringify({ type: 'CURSOR', x, y, name }));
   }
 };
 

@@ -3,16 +3,19 @@ import { CanvasRenderer } from './components/CanvasRenderer';
 import { useGraphStore, type Node } from './store/useGraphStore';
 import { syncGraph } from './lib/webrtc';
 import { generateKey, exportKey, importKey, encryptPayload, decryptPayload, parseHash, updateHash, deriveKeyFromPassword, bufferToBase64UrlSafe, base64UrlSafeToBuffer } from './lib/crypto';
-import { Skull, AlertTriangle, ShieldAlert, Calendar as CalendarIcon, Download, Flame, Info, Lock, Image as ImageIcon, Search, Undo, Redo, Activity, Settings as SettingsIcon, Network, Save, ZoomIn, ZoomOut, Target, BrainCircuit } from 'lucide-react';
+import { Skull, AlertTriangle, ShieldAlert, Calendar as CalendarIcon, Download, Flame, Info, Lock, Image as ImageIcon, Search, Undo, Redo, Activity, Settings as SettingsIcon, Network, Save, ZoomIn, ZoomOut, Target, BrainCircuit, AlignLeft, Clock, PenTool } from 'lucide-react';
 import { CalendarSidebar } from './components/CalendarSidebar';
 import { MarkdownEditor } from './components/MarkdownEditor';
 import { InsightsPanel } from './components/InsightsPanel';
 import { SettingsModal } from './components/SettingsModal';
 import { P2PSyncModal } from './components/P2PSyncModal';
 import { ChatBox } from './components/ChatBox';
+import { ListViewModal } from './components/ListViewModal';
+import { ReplaySlider } from './components/ReplaySlider';
 import { PathwayPlayer } from './components/PathwayPlayer';
+import { QuickPadModal } from './components/QuickPadModal';
 import { createStegoImage, extractStegoImage } from './lib/steganography';
-import { autoClusterNodes } from './lib/ai';
+import { autoClusterNodes, brainstormConcept } from './lib/ai';
 import JSZip from 'jszip';
 import './index.css';
 
@@ -40,6 +43,9 @@ export default function App() {
   const [showInsights, setShowInsights] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showSync, setShowSync] = useState(false);
+  const [showListView, setShowListView] = useState(false);
+  const [showReplay, setShowReplay] = useState(false);
+  const [showQuickPad, setShowQuickPad] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchIndex, setSearchIndex] = useState(0);
@@ -331,6 +337,14 @@ export default function App() {
     const pad = (n: number) => n.toString().padStart(2, '0');
     const todayStr = `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`;
     
+    // Format time (e.g. 10:45 AM)
+    let hours = today.getHours();
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    hours = hours % 12;
+    hours = hours ? hours : 12; // the hour '0' should be '12'
+    const minutes = pad(today.getMinutes());
+    const timeStr = `${hours}:${minutes} ${ampm}`;
+    
     let text = inputValue.trim();
     
     let isLocked = false;
@@ -398,6 +412,47 @@ export default function App() {
        return;
     }
 
+    if (text.startsWith('/brainstorm ')) {
+       const topic = text.replace('/brainstorm ', '').trim();
+       if (!topic) return;
+       
+       setFloatingInput(null);
+       setInputValue('');
+       const rootId = crypto.randomUUID();
+       
+       // Add the root node immediately
+       addNode({
+         id: rootId, text: topic, x: floatingInput.x, y: floatingInput.y, vx: 0, vy: 0, date: todayStr, timeString: timeStr, createdAt: Date.now()
+       });
+
+       try {
+         setIsAiThinking(true);
+         setAiMessage(`Brainstorming: ${topic}...`);
+         
+         const concepts = await brainstormConcept(topic, (msg) => setAiMessage(msg));
+         
+         const spreadRadius = 250;
+         concepts.forEach((concept, idx) => {
+            const angle = (idx / concepts.length) * Math.PI * 2;
+            const branchX = floatingInput.x + Math.cos(angle) * spreadRadius;
+            const branchY = floatingInput.y + Math.sin(angle) * spreadRadius;
+            
+            const branchId = crypto.randomUUID();
+            addNode({
+               id: branchId, text: concept, x: branchX, y: branchY, vx: 0, vy: 0, date: todayStr, timeString: timeStr, createdAt: Date.now(), parentId: rootId
+            });
+            addEdge(branchId, rootId);
+         });
+         
+       } catch (e: unknown) {
+         alert("Brainstorming failed: " + (e as Error).message);
+       } finally {
+         setIsAiThinking(false);
+         setAiMessage("");
+       }
+       return;
+    }
+
     if (text.startsWith('/lock ')) {
        isLocked = true;
        text = text.replace('/lock ', '');
@@ -437,9 +492,9 @@ export default function App() {
        }
        text = parts.slice(2).join(' ') || "Embed";
     } else {
-       const ytMatch = text.match(/(?:https?:\/\/(?:www\.)?)?(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/i);
+       const ytMatch = text.match(/(?:https?:\/\/(?:www\.)?)?(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})[^\s]*/i);
        if (ytMatch) {
-         imageUrl = `https://img.youtube.com/vi/${ytMatch[1]}/hqdefault.jpg`;
+         embedUrl = `https://www.youtube.com/embed/${ytMatch[1]}`;
          text = text.replace(ytMatch[0], '').trim() || "YouTube Video";
        } else {
          const imgMatch = text.match(/(https?:\/\/[^\s]+\.(jpeg|jpg|gif|png|webp))/i);
@@ -483,14 +538,14 @@ export default function App() {
       
       if (!targetNode) {
         const targetId = crypto.randomUUID();
-        targetNode = { id: targetId, text: targetText, x: floatingInput.x + 100, y: floatingInput.y + 100, vx: 0, vy: 0, date: todayStr };
+        targetNode = { id: targetId, text: targetText, x: floatingInput.x + 100, y: floatingInput.y + 100, vx: 0, vy: 0, date: todayStr, timeString: timeStr, createdAt: Date.now() };
         addNode(targetNode);
       }
       
-      addNode({ id: newId, text: text || 'New Node', x: floatingInput.x, y: floatingInput.y, vx: 0, vy: 0, date: todayStr, color, imageUrl, embedUrl, isLocked, isCategory, isGroup, parentId: useGraphStore.getState().currentParentId || undefined });
+      addNode({ id: newId, text: text || 'New Node', x: floatingInput.x, y: floatingInput.y, vx: 0, vy: 0, date: todayStr, timeString: timeStr, createdAt: Date.now(), color, imageUrl, embedUrl, isLocked, isCategory, isGroup, parentId: useGraphStore.getState().currentParentId || undefined });
       addEdge(newId, targetNode.id);
     } else {
-      addNode({ id: newId, text: text || 'New Node', x: floatingInput.x, y: floatingInput.y, vx: 0, vy: 0, date: todayStr, color, imageUrl, embedUrl, isLocked, isCategory, isGroup, parentId: useGraphStore.getState().currentParentId || undefined });
+      addNode({ id: newId, text: text || 'New Node', x: floatingInput.x, y: floatingInput.y, vx: 0, vy: 0, date: todayStr, timeString: timeStr, createdAt: Date.now(), color, imageUrl, embedUrl, isLocked, isCategory, isGroup, parentId: useGraphStore.getState().currentParentId || undefined });
     }
 
     // Ensure the Date Node exists for today, but do NOT automatically connect it
@@ -657,6 +712,7 @@ export default function App() {
       <CalendarSidebar isOpen={isCalendarOpen} onClose={() => setIsCalendarOpen(false)} />
       <MarkdownEditor />
       <ChatBox isConnected={isP2PConnected} />
+      {showQuickPad && <QuickPadModal onClose={() => setShowQuickPad(false)} />}
       
       <input 
         type="file" 
@@ -778,10 +834,7 @@ export default function App() {
 
         <div className="sidebar-section-title">Network & IO</div>
 
-        <button className="btn-pill" onClick={() => setShowSync(true)}>
-          <Network size={18} />
-          Sync P2P
-        </button>
+
         
         <button className="btn-pill" onClick={exportStego}>
           <ImageIcon size={18} />
@@ -884,6 +937,7 @@ export default function App() {
             <h3 style={{ color: '#fff', borderBottom: '1px solid #3f3f46', paddingBottom: '10px' }}>General Features</h3>
             <ul style={{ lineHeight: '1.6', marginBottom: '25px' }}>
               <li><strong>Lasso Selection:</strong> Hold <strong>Shift</strong> and drag over the canvas to draw a selection box. All selected thoughts can be dragged simultaneously.</li>
+              <li><strong>List View:</strong> Click the "List View" icon in the bottom right corner to pop out a clean, readable text view of all your thoughts grouped by date. You can even edit thoughts directly from here!</li>
               <li><strong>Live AI Clustering:</strong> Type <code>/cluster</code> to let the local AI read all your thoughts, group them into semantic categories, and physically organize them into bounding boxes.</li>
               <li><strong>Deep Thoughts:</strong> Select a thought and press the 'Edit' button in the bottom right to open the Markdown editor. You can drag and drop images directly into the text!</li>
               <li><strong>Node Merging:</strong> Drag and hold one thought over another to fuse them together.</li>
@@ -917,6 +971,8 @@ export default function App() {
       {showInsights && <InsightsPanel onClose={() => setShowInsights(false)} />}
       {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
       {showSync && <P2PSyncModal onClose={() => setShowSync(false)} />}
+      {showListView && <ListViewModal onClose={() => setShowListView(false)} />}
+      {showReplay && <ReplaySlider />}
       {showPasswordPrompt && (
         <div style={{
           position: 'absolute', top: 0, left: 0, width: '100vw', height: '100vh',
@@ -1176,7 +1232,7 @@ export default function App() {
 
       {/* Zoom UI Widget */}
       <div style={{
-        position: 'absolute', bottom: 30, right: 30, zIndex: 10,
+        position: 'absolute', bottom: 190, right: 30, zIndex: 10,
         display: 'flex', flexDirection: 'column', gap: '8px',
         background: 'rgba(24, 24, 27, 0.4)', backdropFilter: 'blur(30px)', WebkitBackdropFilter: 'blur(30px)',
         padding: '8px', borderRadius: '16px', border: '1px solid rgba(255, 255, 255, 0.08)',
@@ -1192,6 +1248,24 @@ export default function App() {
         <div style={{ height: '1px', background: 'rgba(63, 63, 70, 0.5)', width: '100%' }} />
         <button onClick={() => window.dispatchEvent(new CustomEvent('zoomOut'))} style={{ background: 'transparent', border: 'none', color: '#fff', cursor: 'pointer', padding: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="Zoom Out">
           <ZoomOut size={20} />
+        </button>
+        <div style={{ height: '1px', background: 'rgba(63, 63, 70, 0.5)', width: '100%' }} />
+        <button onClick={() => setShowQuickPad(!showQuickPad)} style={{ background: '#27272a', color: '#fff', border: '1px solid #3f3f46', padding: '12px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="Embedded Quick-Pad">
+          <PenTool size={20} />
+        </button>
+        <button onClick={() => setShowSync(true)} style={{ background: '#27272a', color: isP2PConnected ? '#10b981' : '#fff', border: '1px solid #3f3f46', padding: '12px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="P2P Multiplayer">
+          <Network size={20} />
+        </button>
+        <div style={{ height: '1px', background: 'rgba(63, 63, 70, 0.5)', width: '100%' }} />
+        <button onClick={() => setShowListView(true)} style={{ background: 'transparent', border: 'none', color: '#fff', cursor: 'pointer', padding: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="List View">
+          <AlignLeft size={20} />
+        </button>
+        <div style={{ height: '1px', background: 'rgba(63, 63, 70, 0.5)', width: '100%' }} />
+        <button onClick={() => {
+          setShowReplay(!showReplay);
+          if (showReplay) useGraphStore.getState().setTimeFilter(null);
+        }} style={{ background: 'transparent', border: 'none', color: showReplay ? '#3b82f6' : '#fff', cursor: 'pointer', padding: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="Time Machine">
+          <Clock size={20} />
         </button>
       </div>
 

@@ -1,4 +1,4 @@
-import type { Node, Edge } from '../store/useGraphStore';
+import { useGraphStore, type Node, type Edge } from '../store/useGraphStore';
 
 const REPULSION_FORCE = 6000;
 const ATTRACTION_FORCE = 0.08;
@@ -17,6 +17,27 @@ const getEffectiveRadius = (n: Node): number => {
 
 export function applyPhysics(nodes: Node[], edges: Edge[], dt: number): Node[] {
   const newNodes = nodes.map(n => ({ ...n }));
+
+  const focusNodeId = useGraphStore.getState().activeFocusId;
+  const focusSet = new Set<string>();
+  if (focusNodeId) {
+    const queue = [focusNodeId];
+    focusSet.add(focusNodeId);
+    let idx = 0;
+    while (idx < queue.length) {
+      const current = queue[idx++];
+      edges.forEach(e => {
+        if (e.source === current && !focusSet.has(e.target)) {
+          focusSet.add(e.target);
+          queue.push(e.target);
+        }
+        if (e.target === current && !focusSet.has(e.source)) {
+          focusSet.add(e.source);
+          queue.push(e.source);
+        }
+      });
+    }
+  }
 
   for (let i = 0; i < newNodes.length; i++) {
     const nodeA = newNodes[i];
@@ -91,6 +112,21 @@ export function applyPhysics(nodes: Node[], edges: Edge[], dt: number): Node[] {
           const force = pullForce / dist;
           fx += (dx / dist) * force;
           fy += (dy / dist) * force;
+        }
+      }
+    }
+
+    // Focus mode attraction
+    if (focusNodeId && focusSet.has(nodeA.id) && nodeA.id !== focusNodeId) {
+      const focusNode = newNodes.find(n => n.id === focusNodeId);
+      if (focusNode) {
+        const dx = focusNode.x - nodeA.x;
+        const dy = focusNode.y - nodeA.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist > 200) {
+           const force = 0.05 * (dist - 200);
+           fx += (dx / dist) * force;
+           fy += (dy / dist) * force;
         }
       }
     }

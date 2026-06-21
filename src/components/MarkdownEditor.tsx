@@ -1,13 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { useGraphStore } from '../store/useGraphStore';
 import { syncGraph } from '../lib/webrtc';
-import { X, Save, Maximize2, Eye, Edit3, BrainCircuit, Trash2, ZoomIn, Link } from 'lucide-react';
+import { X, Save, Maximize2, Eye, Edit3, BrainCircuit, Trash2, ZoomIn, Link, Target } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { brainstormConcept, findGhostLinks, devilsAdvocate } from '../lib/ai';
 
 export function MarkdownEditor() {
-  const { selectedNodeId, setSelectedNodeId, updateNodeDetails, updateNodeRadius, updateNodeStyle, updateNodeShape, toggleSticky, setCurrentParentId, toggleGravityWell, pathway, setPathway } = useGraphStore();
+  const { selectedNodeId, setSelectedNodeId, updateNodeDetails, updateNodeRadius, updateNodeStyle, updateNodeShape, toggleSticky, setCurrentParentId, toggleGravityWell, pathway, setPathway, activeFocusId, setActiveFocusId } = useGraphStore();
   
   const [text, setText] = useState('');
   const [radius, setRadius] = useState(25);
@@ -481,6 +481,23 @@ export function MarkdownEditor() {
             title="Dive into this node to map concepts inside it"
           >
             <ZoomIn size={18} />
+          </button>
+
+          <button 
+            onClick={() => {
+              if (activeFocusId === selectedNodeId) {
+                setActiveFocusId(null);
+              } else {
+                setActiveFocusId(selectedNodeId);
+              }
+            }}
+            style={{
+              display: 'flex', alignItems: 'center', gap: '8px', background: activeFocusId === selectedNodeId ? '#fbbf24' : '#64748b', color: '#fff',
+              border: 'none', padding: '10px 16px', borderRadius: '8px', cursor: 'pointer', fontWeight: 600
+            }}
+            title="Focus Mode (Highlight Train of Thought)"
+          >
+            <Target size={18} />
           </button>
 
           <button 

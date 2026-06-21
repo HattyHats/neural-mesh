@@ -291,10 +291,38 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ onDoubleClick })
          ctx.fill();
       });
 
+      // Calculate Focus Set
+      const focusNodeId = useGraphStore.getState().activeFocusId;
+      const focusSet = new Set<string>();
+      if (focusNodeId) {
+        const queue = [focusNodeId];
+        focusSet.add(focusNodeId);
+        let idx = 0;
+        while (idx < queue.length) {
+          const current = queue[idx++];
+          edges.forEach(e => {
+            if (e.source === current && !focusSet.has(e.target)) {
+              focusSet.add(e.target);
+              queue.push(e.target);
+            }
+            if (e.target === current && !focusSet.has(e.source)) {
+              focusSet.add(e.source);
+              queue.push(e.source);
+            }
+          });
+        }
+      }
+
       visibleEdges.forEach(edge => {
         const source = newNodes.find(n => n.id === edge.source);
         const target = newNodes.find(n => n.id === edge.target);
         if (source && target) {
+          const timeFilter = useGraphStore.getState().timeFilter;
+          if (timeFilter !== null) {
+             if (source.createdAt && source.createdAt > timeFilter) return;
+             if (target.createdAt && target.createdAt > timeFilter) return;
+          }
+
           const maxInteractions = Math.max(source.interactionCount || 0, target.interactionCount || 0);
           const thickness = Math.min(2 + (maxInteractions * 0.1), 8); // Max thickness of 8
           ctx.lineWidth = thickness / t.scale;
@@ -316,6 +344,10 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ onDoubleClick })
           const arrowTipX = target.x - Math.cos(angle) * (targetRadius + 6);
           const arrowTipY = target.y - Math.sin(angle) * (targetRadius + 6);
           
+          if (focusNodeId) {
+             ctx.globalAlpha = (!focusSet.has(edge.source) || !focusSet.has(edge.target)) ? 0.05 : 1.0;
+          }
+
           ctx.beginPath();
           ctx.moveTo(source.x, source.y);
           
@@ -370,6 +402,7 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ onDoubleClick })
           ctx.setLineDash([]); // Reset dash
         }
       });
+      ctx.globalAlpha = 1.0;
 
       if (edgeSourceRef.current) {
         const source = newNodes.find(n => n.id === edgeSourceRef.current);
@@ -385,6 +418,9 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ onDoubleClick })
       newNodes.forEach(node => {
         if (node.isGroup) return;
 
+        const timeFilter = useGraphStore.getState().timeFilter;
+        if (timeFilter !== null && node.createdAt && node.createdAt > timeFilter) return;
+
         const isPeerLocked = useGraphStore.getState().peerLockedNodeId === node.id;
         
         // Heatmap Logic
@@ -393,6 +429,10 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ onDoubleClick })
            const daysOld = (Date.now() - node.lastInteraction) / (1000 * 60 * 60 * 24);
            opacity = Math.max(0.4, 1.0 - (daysOld * 0.1)); // Fades completely over 6 days
         }
+        if (focusNodeId && !focusSet.has(node.id)) {
+           opacity = 0.1;
+        }
+        ctx.globalAlpha = opacity;
         ctx.globalAlpha = opacity;
 
         const baseSize = node.radius || (node.isDateNode ? 30 : (node.isCategory ? 35 : 25));
@@ -514,6 +554,12 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ onDoubleClick })
         ctx.textBaseline = 'middle';
         ctx.fillStyle = node.isLocked ? '#a1a1aa' : (node.isDateNode || node.isCategory ? '#eff6ff' : '#eee');
         ctx.fillText(textToDraw, node.x, node.y + (node.isDateNode || node.isCategory ? 45 : 40));
+        
+        if (node.timeString) {
+          ctx.font = `11px "Inter", sans-serif`;
+          ctx.fillStyle = '#9ca3af'; // gray-400
+          ctx.fillText(node.timeString, node.x, node.y + (node.isDateNode || node.isCategory ? 62 : 57));
+        }
       });
 
       if (lassoStartRef.current && lassoEndRef.current) {
@@ -606,9 +652,9 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ onDoubleClick })
          }
       });
 
-      // Draw Peer Cursor
-      const peerCursor = useGraphStore.getState().peerCursor;
-      if (peerCursor) {
+      // Draw Peer Cursors
+      const peerCursors = useGraphStore.getState().peerCursors;
+      Object.values(peerCursors).forEach(cursor => {
         ctx.save();
         const t = transformRef.current;
         ctx.translate(t.x, t.y);
@@ -616,19 +662,19 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ onDoubleClick })
         
         ctx.fillStyle = '#ef4444';
         ctx.beginPath();
-        ctx.moveTo(peerCursor.x, peerCursor.y);
-        ctx.lineTo(peerCursor.x + 15 / t.scale, peerCursor.y + 15 / t.scale);
-        ctx.lineTo(peerCursor.x + 5 / t.scale, peerCursor.y + 15 / t.scale);
-        ctx.lineTo(peerCursor.x, peerCursor.y + 22 / t.scale);
+        ctx.moveTo(cursor.x, cursor.y);
+        ctx.lineTo(cursor.x + 15 / t.scale, cursor.y + 15 / t.scale);
+        ctx.lineTo(cursor.x + 5 / t.scale, cursor.y + 15 / t.scale);
+        ctx.lineTo(cursor.x, cursor.y + 22 / t.scale);
         ctx.fill();
 
         ctx.fillStyle = '#ef4444';
         ctx.font = `${14 / t.scale}px "Inter", sans-serif`;
         ctx.textAlign = 'left';
         ctx.textBaseline = 'top';
-        ctx.fillText('Friend', peerCursor.x + 15 / t.scale, peerCursor.y + 20 / t.scale);
+        ctx.fillText(cursor.name || 'Friend', cursor.x + 15 / t.scale, cursor.y + 20 / t.scale);
         ctx.restore();
-      }
+      });
 
       animationId = requestAnimationFrame(render);
     };

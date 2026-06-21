@@ -24,6 +24,7 @@ export interface Node {
   isGravityWell?: boolean;
   createdAt?: number; // timestamp for birth animation
   isGroup?: boolean;
+  timeString?: string;
   width?: number;
   height?: number;
   embedUrl?: string;
@@ -49,13 +50,20 @@ export interface GraphState {
   vaultSalt: string | null;
   vaultKey: CryptoKey | null;
   focusNode: string | null;
+  activeFocusId: string | null;
+  timeFilter: number | null;
+  quickPadUrl: string | null;
   currentParentId: string | null;
   setCurrentParentId: (id: string | null) => void;
   pathway: string[];
   isPathwayPlaying: boolean;
   setPathway: (pathway: string[]) => void;
   setIsPathwayPlaying: (playing: boolean) => void;
+  timeFilter: number | null;
+  setTimeFilter: (time: number | null) => void;
   peerCursor: { x: number, y: number } | null;
+  peerCursors: Record<string, { x: number, y: number, name: string }>;
+  updatePeerCursor: (id: string, cursor: { x: number, y: number, name: string } | null) => void;
   peerLockedNodeId: string | null;
   isP2PConnected: boolean;
   chatMessages: { id: string, text: string, sender: 'me' | 'friend' }[];
@@ -70,7 +78,9 @@ export interface GraphState {
   setSelectedDate: (date: string | null) => void;
   setVault: (salt: string, key: CryptoKey) => void;
   unlockNode: (id: string, text: string) => void;
+  setQuickPadUrl: (url: string | null) => void;
   setFocusNode: (id: string | null) => void;
+  setActiveFocusId: (id: string | null) => void;
   setSelectedNodeId: (id: string | null) => void;
   setSelectedNodeIds: (ids: string[]) => void;
   toggleCollapse: (id: string) => void;
@@ -81,7 +91,7 @@ export interface GraphState {
   updateNodeRadius: (id: string, radius: number) => void;
   mergeNodes: (targetId: string, sourceId: string) => void;
   deleteNode: (id: string) => void;
-  mergeGraph: (incomingNodes: Node[], incomingEdges: Edge[]) => void;
+  mergeGraph: (incomingNodes: Node[], incomingEdges: Edge[], incomingQuickPadUrl?: string | null) => void;
   setTheme: (theme: string) => void;
   updateNodeStyle: (id: string, color?: string, imageUrl?: string) => void;
   updateNodeShape: (id: string, shape: 'circle' | 'square' | 'hexagon' | 'triangle') => void;
@@ -101,19 +111,29 @@ export const useGraphStore = create<GraphState>((set) => ({
   selectedDate: null,
   selectedNodeId: null,
   selectedNodeIds: [],
-  focusNode: null,
+  quickPadUrl: null,
   vaultSalt: null,
   vaultKey: null,
+  focusNode: null,
+  timeFilter: null,
   currentParentId: null,
   setCurrentParentId: (id) => set({ currentParentId: id }),
   pathway: [],
   isPathwayPlaying: false,
   setPathway: (pathway) => set({ pathway }),
-  setIsPathwayPlaying: (playing) => set({ isPathwayPlaying: playing }),
+  setIsPathwayPlaying: (isPathwayPlaying) => set({ isPathwayPlaying }),
   peerCursor: null,
+  peerCursors: {},
+  updatePeerCursor: (id, cursor) => set((state) => {
+    const newCursors = { ...state.peerCursors };
+    if (cursor) newCursors[id] = cursor;
+    else delete newCursors[id];
+    return { peerCursors: newCursors };
+  }),
   peerLockedNodeId: null,
   isP2PConnected: false,
   chatMessages: [],
+  setTimeFilter: (time) => set({ timeFilter: time }),
   addChatMessage: (text, sender) => set((state) => ({ 
     chatMessages: [...state.chatMessages, { id: crypto.randomUUID(), text, sender }] 
   })),
@@ -145,7 +165,9 @@ export const useGraphStore = create<GraphState>((set) => ({
   unlockNode: (id, text) => set(state => ({
     nodes: state.nodes.map(n => n.id === id ? { ...n, text, isLocked: false } : n)
   })),
+  setQuickPadUrl: (url) => set({ quickPadUrl: url }),
   setFocusNode: (id) => set({ focusNode: id }),
+  setActiveFocusId: (id) => set({ activeFocusId: id }),
   setSelectedNodeId: (id) => set({ selectedNodeId: id }),
   setSelectedNodeIds: (ids) => set({ selectedNodeIds: ids }),
   toggleCollapse: (id) => set(state => ({
@@ -242,7 +264,7 @@ export const useGraphStore = create<GraphState>((set) => ({
       return { nodes: newNodes, edges: newEdges };
     });
   },
-  mergeGraph: (incomingNodes, incomingEdges) => {
+  mergeGraph: (incomingNodes, incomingEdges, incomingQuickPadUrl) => {
     set(state => {
       const newNodes = [...state.nodes];
       for (const inc of incomingNodes) {
@@ -258,7 +280,10 @@ export const useGraphStore = create<GraphState>((set) => ({
           newEdges.push(inc);
         }
       }
-      return { nodes: newNodes, edges: newEdges };
+      
+      const newQuickPadUrl = incomingQuickPadUrl !== undefined && incomingQuickPadUrl !== null ? incomingQuickPadUrl : state.quickPadUrl;
+
+      return { nodes: newNodes, edges: newEdges, quickPadUrl: newQuickPadUrl };
     });
   },
   setTheme: (theme) => set({ theme: theme as any }),
