@@ -1,16 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { useGraphStore } from '../store/useGraphStore';
 import { syncGraph } from '../lib/webrtc';
-import { X, Save, Maximize2, Eye, Edit3, BrainCircuit, Trash2, ZoomIn, Link, Target } from 'lucide-react';
+import { X, Save, Eye, Edit3, BrainCircuit, Trash2, ZoomIn, Link, Target } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { brainstormConcept, findGhostLinks, devilsAdvocate } from '../lib/ai';
 
 export function MarkdownEditor() {
-  const { selectedNodeId, setSelectedNodeId, updateNodeDetails, updateNodeRadius, updateNodeStyle, updateNodeShape, toggleSticky, setCurrentParentId, toggleGravityWell, pathway, setPathway, activeFocusId, setActiveFocusId } = useGraphStore();
+  const { selectedNodeId, setSelectedNodeId, updateNodeDetails, updateNodeStyle, updateNodeShape, toggleSticky, setCurrentParentId, toggleGravityWell, pathway, setPathway, activeFocusId, setActiveFocusId } = useGraphStore();
   
   const [text, setText] = useState('');
-  const [radius, setRadius] = useState(25);
   const [isImage, setIsImage] = useState(false);
   const [nodeColor, setNodeColor] = useState('#8b5cf6');
   const [nodeShape, setNodeShape] = useState<'circle' | 'square' | 'hexagon' | 'triangle'>('circle');
@@ -257,11 +256,18 @@ export function MarkdownEditor() {
               onKeyDown={e => {
                 if (e.key === 'Enter') {
                   const state = useGraphStore.getState();
-                  state.updateNodeImageUrl(selectedNodeId, imageUrlInput);
+                  if (imageUrlInput) {
+                    state.updateNodeStyle(selectedNodeId, undefined, imageUrlInput);
+                    setIsImage(true);
+                    setTimeout(syncGraph, 100);
+                  }
                   setShowImageInput(false);
-                  setTimeout(syncGraph, 100);
+                  setImageUrlInput('');
                 }
-                if (e.key === 'Escape') setShowImageInput(false);
+                if (e.key === 'Escape') {
+                  setShowImageInput(false);
+                  setImageUrlInput('');
+                }
               }}
               style={{ flex: 1, background: '#18181b', color: '#fff', border: '1px solid #3f3f46', padding: '4px 8px', borderRadius: '4px', fontSize: '12px' }}
             />
@@ -320,15 +326,17 @@ export function MarkdownEditor() {
 
         <button 
           onClick={() => {
-            if (pathway.isActive) {
-              setPathway(false);
-            } else {
-              setPathway(true, selectedNodeId);
+            if (selectedNodeId) {
+              if (pathway.includes(selectedNodeId)) {
+                setPathway(pathway.filter(id => id !== selectedNodeId));
+              } else {
+                setPathway([...pathway, selectedNodeId]);
+              }
             }
           }}
-          style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '4px', background: (pathway.isActive && pathway.sourceId === selectedNodeId) ? '#10b981' : 'transparent', color: (pathway.isActive && pathway.sourceId === selectedNodeId) ? '#fff' : '#a1a1aa', border: '1px solid #3f3f46', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}
+          style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '4px', background: pathway.includes(selectedNodeId || '') ? '#0ea5e9' : 'transparent', color: pathway.includes(selectedNodeId || '') ? '#fff' : '#a1a1aa', border: '1px solid #3f3f46', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}
         >
-          <Target size={12} /> {pathway.isActive ? 'Cancel' : 'Pathway'}
+          <Target size={12} /> {pathway.includes(selectedNodeId || '') ? 'In Pathway' : '+ Pathway'}
         </button>
       </div>
 
