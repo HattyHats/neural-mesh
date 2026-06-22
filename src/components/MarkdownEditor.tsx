@@ -145,8 +145,6 @@ export function MarkdownEditor() {
         // eslint-disable-next-line react-hooks/set-state-in-effect
         setText(n.details || '');
         // eslint-disable-next-line react-hooks/set-state-in-effect
-        setRadius(n.radius || 25);
-        // eslint-disable-next-line react-hooks/set-state-in-effect
         setIsImage(!!n.imageUrl);
         // eslint-disable-next-line react-hooks/set-state-in-effect
         setNodeColor(n.color || (n.isDateNode ? '#27272a' : '#8b5cf6'));
