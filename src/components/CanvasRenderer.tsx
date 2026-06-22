@@ -13,6 +13,7 @@ const wrapText = (ctx: CanvasRenderingContext2D, text: string, x: number, y: num
   const words = text.split(' ');
   let line = '';
   let currentY = y;
+  let lines = 1;
 
   for(let n = 0; n < words.length; n++) {
     const testLine = line + words[n] + ' ';
@@ -22,13 +23,14 @@ const wrapText = (ctx: CanvasRenderingContext2D, text: string, x: number, y: num
       ctx.fillText(line, x, currentY);
       line = words[n] + ' ';
       currentY += lineHeight;
+      lines++;
     }
     else {
       line = testLine;
     }
   }
   ctx.fillText(line, x, currentY);
-  return currentY + lineHeight;
+  return lines * lineHeight;
 };
 
 const buildShapePath = (ctx: CanvasRenderingContext2D, node: any, size: number) => {
@@ -436,8 +438,7 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ onDoubleClick })
         ctx.globalAlpha = opacity;
 
         const baseSize = node.radius || (node.isDateNode ? 30 : (node.isCategory ? 35 : 25));
-        const interactionBonus = Math.min((node.interactionCount || 0) * 0.5, 15); // Max +15px radius bonus
-        const size = baseSize + interactionBonus;
+        const size = baseSize;
         
         let animatedSize = size;
         if (node.createdAt) {
@@ -450,24 +451,46 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ onDoubleClick })
         }
         
         if (node.isSticky) {
+          const w = node.width || animatedSize * 4;
+          const h = node.height || animatedSize * 4;
+          const left = node.x - w/2;
+          const top = node.y - h/2;
+
           ctx.fillStyle = node.color || '#fef08a';
           ctx.shadowColor = 'rgba(0,0,0,0.5)';
           ctx.shadowBlur = 10;
           ctx.shadowOffsetY = 5;
-          ctx.fillRect(node.x - animatedSize*2, node.y - animatedSize*2, animatedSize*4, animatedSize*4);
+          ctx.fillRect(left, top, w, h);
           ctx.shadowColor = 'transparent';
           ctx.shadowBlur = 0;
           ctx.shadowOffsetY = 0;
 
           ctx.strokeStyle = nodeDraggingRef.current === node.id ? '#00aaff' : (isPeerLocked ? '#ef4444' : 'rgba(0,0,0,0.1)');
           ctx.lineWidth = 2 / t.scale;
-          ctx.strokeRect(node.x - animatedSize*2, node.y - animatedSize*2, animatedSize*4, animatedSize*4);
+          ctx.strokeRect(left, top, w, h);
 
           ctx.fillStyle = '#18181b';
           ctx.font = `12px "Inter", sans-serif`;
           ctx.textAlign = 'left';
           ctx.textBaseline = 'top';
-          wrapText(ctx, node.details || node.text || 'Empty Sticky', node.x - animatedSize*2 + 10, node.y - animatedSize*2 + 10, animatedSize*4 - 20, 16);
+          
+          ctx.save();
+          ctx.beginPath();
+          ctx.rect(left, top, w, h);
+          ctx.clip();
+          const contentHeight = wrapText(ctx, node.details || node.text || 'Empty Sticky', left + 10, top + 10 - (node.scrollY || 0), w - 20, 16);
+          node.maxScrollY = Math.max(0, contentHeight - h + 20);
+          ctx.restore();
+          
+          // Resize Handle
+          ctx.fillStyle = 'rgba(0, 0, 0, 0.15)';
+          ctx.beginPath();
+          ctx.moveTo(node.x + w/2, node.y + h/2 - 20);
+          ctx.lineTo(node.x + w/2, node.y + h/2);
+          ctx.lineTo(node.x + w/2 - 20, node.y + h/2);
+          ctx.closePath();
+          ctx.fill();
+          
           return;
         }
 
@@ -739,9 +762,10 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ onDoubleClick })
     
     // Check for resize handle first
     let resizingNode = nodes.slice().reverse().find(n => {
-       if (!n.isGroup) return false;
-       const w = n.width || 400;
-       const h = n.height || 400;
+       if (!n.isGroup && !n.isSticky) return false;
+       const baseSize = n.radius || (n.isDateNode ? 30 : (n.isCategory ? 35 : 25));
+       const w = n.width || (n.isSticky ? baseSize * 4 : 400);
+       const h = n.height || (n.isSticky ? baseSize * 4 : 400);
        const right = n.x + w/2;
        const bottom = n.y + h/2;
        return pos.x >= right - 25 && pos.x <= right && pos.y >= bottom - 25 && pos.y <= bottom;
@@ -754,10 +778,18 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ onDoubleClick })
 
     let clickedNode = nodes.slice().reverse().find(n => {
       if (n.isGroup) return false;
-      const dx = n.x - pos.x;
-      const dy = n.y - pos.y;
-      const r = n.radius || 25;
-      return dx * dx + dy * dy < r * r;
+
+      if (n.isSticky) {
+        const baseSize = n.radius || (n.isDateNode ? 30 : (n.isCategory ? 35 : 25));
+        const w = n.width || baseSize * 4;
+        const h = n.height || baseSize * 4;
+        return pos.x >= n.x - w/2 && pos.x <= n.x + w/2 && pos.y >= n.y - h/2 && pos.y <= n.y + h/2;
+      } else {
+        const baseSize = n.radius || (n.isDateNode ? 30 : (n.isCategory ? 35 : 25));
+        const dx = n.x - pos.x;
+        const dy = n.y - pos.y;
+        return dx * dx + dy * dy < baseSize * baseSize;
+      }
     });
 
     if (!clickedNode) {
@@ -815,8 +847,11 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ onDoubleClick })
         const moveX = dx / transformRef.current.scale;
         const moveY = dy / transformRef.current.scale;
         
-        const w = node.width || 400;
-        const h = node.height || 400;
+        const baseSize = node.radius || (node.isDateNode ? 30 : (node.isCategory ? 35 : 25));
+        const defaultW = node.isSticky ? baseSize * 4 : 400;
+        const defaultH = node.isSticky ? baseSize * 4 : 400;
+        const w = node.width || defaultW;
+        const h = node.height || defaultH;
         
         // Keep top-left anchored
         const topLeftX = node.x - w/2;
@@ -951,6 +986,28 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ onDoubleClick })
   };
 
   const handleWheel = (e: React.WheelEvent) => {
+    const pos = getCanvasPos(e.clientX, e.clientY);
+    const state = useGraphStore.getState();
+    
+    // Check if hovering over a sticky note
+    let hoveredSticky = state.nodes.slice().reverse().find(n => {
+      if (!n.isGroup && n.isSticky) {
+        const baseSize = n.radius || (n.isDateNode ? 30 : (n.isCategory ? 35 : 25));
+        const w = n.width || baseSize * 4;
+        const h = n.height || baseSize * 4;
+        return pos.x >= n.x - w/2 && pos.x <= n.x + w/2 && pos.y >= n.y - h/2 && pos.y <= n.y + h/2;
+      }
+      return false;
+    });
+
+    if (hoveredSticky) {
+      const maxScroll = hoveredSticky.maxScrollY || 0;
+      if (maxScroll > 0) {
+        hoveredSticky.scrollY = Math.max(0, Math.min(maxScroll, (hoveredSticky.scrollY || 0) + e.deltaY));
+        return; // Prevent canvas zoom
+      }
+    }
+
     const zoomSensitivity = 0.001;
     const delta = -e.deltaY * zoomSensitivity;
     const newScale = Math.min(Math.max(0.1, transformRef.current.scale + delta), 5);

@@ -23,6 +23,8 @@ export interface Node {
   interactionCount?: number;
   isGravityWell?: boolean;
   createdAt?: number; // timestamp for birth animation
+  scrollY?: number;
+  maxScrollY?: number;
   isGroup?: boolean;
   timeString?: string;
   width?: number;
@@ -213,24 +215,23 @@ export const useGraphStore = create<GraphState>((set) => ({
         ...n, 
         ...(color !== undefined && { color }), 
         ...(imageUrl !== undefined && { imageUrl }),
-        lastInteraction: Date.now(), 
-        interactionCount: (n.interactionCount || 0) + 1
+        lastInteraction: Date.now()
       } : n)
     }));
   },
   updateNodeShape: (id, shape) => {
     set(state => ({
-      nodes: state.nodes.map(n => n.id === id ? { ...n, shape, lastInteraction: Date.now(), interactionCount: (n.interactionCount || 0) + 1 } : n)
+      nodes: state.nodes.map(n => n.id === id ? { ...n, shape, lastInteraction: Date.now() } : n)
     }));
   },
   toggleSticky: (id) => {
     set(state => ({
-      nodes: state.nodes.map(n => n.id === id ? { ...n, isSticky: !n.isSticky, lastInteraction: Date.now(), interactionCount: (n.interactionCount || 0) + 1 } : n)
+      nodes: state.nodes.map(n => n.id === id ? { ...n, isSticky: !n.isSticky, lastInteraction: Date.now() } : n)
     }));
   },
   toggleGravityWell: (id) => {
     set(state => ({
-      nodes: state.nodes.map(n => n.id === id ? { ...n, isGravityWell: !n.isGravityWell, lastInteraction: Date.now(), interactionCount: (n.interactionCount || 0) + 1 } : n)
+      nodes: state.nodes.map(n => n.id === id ? { ...n, isGravityWell: !n.isGravityWell, lastInteraction: Date.now() } : n)
     }));
   },
   mergeNodes: (targetId, sourceId) => {
