@@ -56,7 +56,15 @@ export function applyPhysics(nodes: Node[], edges: Edge[], dt: number): Node[] {
       const radiusA = getEffectiveRadius(nodeA);
       const radiusB = getEffectiveRadius(nodeB);
       
-      const safeDistance = radiusA + radiusB + 40;
+      let safeDistance = radiusA + radiusB + 40;
+      let repulsionForce = REPULSION_FORCE;
+
+      // Push thoughts from different dates away from each other
+      if (nodeA.date !== nodeB.date) {
+         safeDistance += 150;
+         repulsionForce *= 5; // Stronger push to separate date clusters
+      }
+      
       const safeDistSq = safeDistance * safeDistance;
       
       if (distSq > 0 && distSq < Math.max(160000, safeDistSq * 1.5)) { 
@@ -64,7 +72,7 @@ export function applyPhysics(nodes: Node[], edges: Edge[], dt: number): Node[] {
         const overlap = Math.max(0, safeDistance - dist);
         
         // Base force + spike if they overlap
-        const force = (REPULSION_FORCE / distSq) + (overlap * 20);
+        const force = (repulsionForce / distSq) + (overlap * 20);
         fx += (dx / dist) * force;
         fy += (dy / dist) * force;
       }
@@ -80,6 +88,9 @@ export function applyPhysics(nodes: Node[], edges: Edge[], dt: number): Node[] {
       }
 
       if (otherNode) {
+        // If they are from different dates, do not pull them together
+        if (otherNode.date !== nodeA.date) return;
+
         const dx = otherNode.x - nodeA.x;
         const dy = otherNode.y - nodeA.y;
         const dist = Math.sqrt(dx * dx + dy * dy);

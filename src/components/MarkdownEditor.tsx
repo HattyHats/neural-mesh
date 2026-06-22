@@ -214,7 +214,7 @@ export function MarkdownEditor() {
       onDragLeave={e => { e.preventDefault(); e.stopPropagation(); }}
       onDrop={handleDrop}
       style={{
-      position: 'absolute', right: 20, top: 20, width: '450px', height: 'calc(100vh - 40px)',
+      position: 'absolute', right: 20, top: 20, width: '450px', height: 'calc(100vh - 100px)',
       background: 'rgba(24, 24, 27, 0.4)', backdropFilter: 'blur(30px)', WebkitBackdropFilter: 'blur(30px)',
       border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '24px', zIndex: 400, display: 'flex', flexDirection: 'column',
       color: '#fff', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)'
@@ -250,48 +250,42 @@ export function MarkdownEditor() {
           <div style={{ display: 'flex', gap: '5px', flex: 1 }}>
             <input 
               autoFocus
-              placeholder="Paste URL + Enter"
+              type="text" 
+              placeholder="Paste Image URL..." 
               value={imageUrlInput}
               onChange={e => setImageUrlInput(e.target.value)}
               onKeyDown={e => {
                 if (e.key === 'Enter') {
-                  if (imageUrlInput) {
-                    updateNodeStyle(selectedNodeId, undefined, imageUrlInput);
-                    setIsImage(true);
-                    setTimeout(syncGraph, 100);
-                  }
+                  const state = useGraphStore.getState();
+                  state.updateNodeImageUrl(selectedNodeId, imageUrlInput);
                   setShowImageInput(false);
-                  setImageUrlInput('');
-                } else if (e.key === 'Escape') {
-                  setShowImageInput(false);
-                  setImageUrlInput('');
+                  setTimeout(syncGraph, 100);
                 }
+                if (e.key === 'Escape') setShowImageInput(false);
               }}
-              style={{ flex: 1, background: '#09090b', border: '1px solid #3f3f46', borderRadius: '4px', color: '#fff', fontSize: '12px', padding: '4px 8px', outline: 'none' }}
+              style={{ flex: 1, background: '#18181b', color: '#fff', border: '1px solid #3f3f46', padding: '4px 8px', borderRadius: '4px', fontSize: '12px' }}
             />
+            <button onClick={() => setShowImageInput(false)} style={{ background: 'transparent', border: 'none', color: '#a1a1aa', cursor: 'pointer' }}><X size={14}/></button>
           </div>
         ) : (
-          <button 
-            onClick={() => setShowImageInput(true)}
-            style={{ background: 'transparent', border: '1px solid #3f3f46', borderRadius: '4px', color: '#e4e4e7', fontSize: '12px', padding: '4px 8px', cursor: 'pointer' }}
-          >
-            Set Image URL
-          </button>
+           <button onClick={() => setShowImageInput(true)} style={{ background: '#27272a', color: '#a1a1aa', border: '1px solid #3f3f46', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}>
+             Set Image URL
+           </button>
         )}
       </div>
 
-      <div style={{ padding: '10px 20px', borderBottom: '1px solid #3f3f46', display: 'flex', alignItems: 'center', gap: '15px', background: 'rgba(0,0,0,0.2)' }}>
+      <div style={{ padding: '10px 20px', borderBottom: '1px solid #3f3f46', display: 'flex', alignItems: 'center', gap: '10px', background: 'rgba(0,0,0,0.2)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <span style={{ fontSize: '12px', color: '#a1a1aa' }}>Shape</span>
           <select 
-            value={nodeShape}
+            value={nodeShape} 
             onChange={e => {
-              const shape = e.target.value as any;
-              setNodeShape(shape);
-              updateNodeShape(selectedNodeId, shape);
+              const s = e.target.value as any;
+              setNodeShape(s);
+              updateNodeShape(selectedNodeId, s);
               setTimeout(syncGraph, 100);
             }}
-            style={{ background: '#09090b', color: '#fff', border: '1px solid #3f3f46', borderRadius: '4px', fontSize: '12px', padding: '2px 4px' }}
+            style={{ background: '#18181b', color: '#fff', border: '1px solid #3f3f46', padding: '4px 8px', borderRadius: '4px', fontSize: '12px' }}
           >
             <option value="circle">Circle</option>
             <option value="square">Square</option>
@@ -299,174 +293,115 @@ export function MarkdownEditor() {
             <option value="triangle">Triangle</option>
           </select>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <button 
-            onClick={() => {
-              toggleSticky(selectedNodeId);
-              setIsSticky(!isSticky);
-              setTimeout(syncGraph, 100);
-            }}
-            style={{ background: isSticky ? 'var(--accent-primary)' : 'transparent', border: '1px solid #3f3f46', borderRadius: '4px', color: isSticky ? '#fff' : '#e4e4e7', fontSize: '12px', padding: '4px 8px', cursor: 'pointer', transition: 'all 0.2s' }}
-          >
-            {isSticky ? 'Sticky Note: ON' : 'Sticky Note: OFF'}
-          </button>
-          <button 
-            onClick={() => {
-              if (selectedNodeId) {
-                toggleGravityWell(selectedNodeId);
-                setIsGravityWell(!isGravityWell);
-                setTimeout(syncGraph, 100);
-              }
-            }}
-            style={{ background: isGravityWell ? 'var(--accent-primary)' : 'transparent', border: '1px solid #3f3f46', borderRadius: '4px', color: isGravityWell ? '#fff' : '#e4e4e7', fontSize: '12px', padding: '4px 8px', cursor: 'pointer', transition: 'all 0.2s' }}
-          >
-            {isGravityWell ? 'Gravity Well: ON' : 'Gravity Well: OFF'}
-          </button>
-          <button 
-            onClick={() => {
-              if (selectedNodeId) {
-                if (pathway.includes(selectedNodeId)) {
-                  setPathway(pathway.filter(id => id !== selectedNodeId));
-                } else {
-                  setPathway([...pathway, selectedNodeId]);
-                }
-              }
-            }}
-            style={{ background: pathway.includes(selectedNodeId || '') ? '#0ea5e9' : 'transparent', border: '1px solid #3f3f46', borderRadius: '4px', color: pathway.includes(selectedNodeId || '') ? '#fff' : '#e4e4e7', fontSize: '12px', padding: '4px 8px', cursor: 'pointer', transition: 'all 0.2s' }}
-          >
-            {pathway.includes(selectedNodeId || '') ? 'In Pathway' : '+ Pathway'}
-          </button>
-        </div>
+
+        <button 
+          onClick={() => {
+            const next = !isSticky;
+            setIsSticky(next);
+            toggleSticky(selectedNodeId);
+            setTimeout(syncGraph, 100);
+          }}
+          style={{ background: isSticky ? '#fbbf24' : 'transparent', color: isSticky ? '#000' : '#a1a1aa', border: '1px solid #3f3f46', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', fontWeight: isSticky ? 600 : 400 }}
+        >
+          Sticky Note: {isSticky ? 'ON' : 'OFF'}
+        </button>
+
+        <button 
+          onClick={() => {
+            const next = !isGravityWell;
+            setIsGravityWell(next);
+            toggleGravityWell(selectedNodeId);
+            setTimeout(syncGraph, 100);
+          }}
+          style={{ background: isGravityWell ? '#a855f7' : 'transparent', color: isGravityWell ? '#fff' : '#a1a1aa', border: '1px solid #3f3f46', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', fontWeight: isGravityWell ? 600 : 400 }}
+        >
+          Gravity Well: {isGravityWell ? 'ON' : 'OFF'}
+        </button>
+
+        <button 
+          onClick={() => {
+            if (pathway.isActive) {
+              setPathway(false);
+            } else {
+              setPathway(true, selectedNodeId);
+            }
+          }}
+          style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '4px', background: (pathway.isActive && pathway.sourceId === selectedNodeId) ? '#10b981' : 'transparent', color: (pathway.isActive && pathway.sourceId === selectedNodeId) ? '#fff' : '#a1a1aa', border: '1px solid #3f3f46', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}
+        >
+          <Target size={12} /> {pathway.isActive ? 'Cancel' : 'Pathway'}
+        </button>
       </div>
 
-      {(isImage || isSticky) && (
-        <div style={{ padding: '15px 20px', borderBottom: '1px solid #3f3f46', display: 'flex', alignItems: 'center', gap: '15px' }}>
-          <Maximize2 size={16} color="#a1a1aa" />
-          <input 
-            type="range" min="10" max="250" value={radius} 
-            onChange={(e) => {
-              const val = parseInt(e.target.value);
-              setRadius(val);
-              updateNodeRadius(selectedNodeId, val);
-            }} 
-            style={{ flex: 1, cursor: 'pointer' }} 
-          />
-          <span style={{ fontSize: '12px', color: '#a1a1aa', width: '35px', textAlign: 'right' }}>{radius}px</span>
-        </div>
-      )}
-
-      {youtubeId && (
-        <div style={{ padding: '20px', borderBottom: '1px solid #3f3f46', background: '#09090b' }}>
-          <iframe 
-            width="100%" 
-            height="230" 
-            src={`https://www.youtube.com/embed/${youtubeId}`} 
-            frameBorder="0" 
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
-            allowFullScreen
-            style={{ borderRadius: '8px', border: '1px solid #3f3f46' }}
-          ></iframe>
-        </div>
-      )}
-
-      {showAiWarning && (
-        <div style={{
-          position: 'absolute', top: 0, left: 0, width: '100%', height: '100%',
-          background: 'rgba(24, 24, 27, 0.95)', backdropFilter: 'blur(5px)',
-          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-          zIndex: 500, padding: '40px', textAlign: 'center'
-        }}>
-          <BrainCircuit size={48} color="#8b5cf6" style={{ marginBottom: '20px' }} />
-          <h3 style={{ margin: '0 0 15px', fontSize: '20px', color: '#fff' }}>Enable Offline AI</h3>
-          <p style={{ color: '#a1a1aa', fontSize: '15px', marginBottom: '30px', lineHeight: '1.6' }}>
-            This will download a ~1GB Language Model securely to your device. 
-            Once downloaded, Neural-Mesh can generate unlimited connections completely offline!
-          </p>
-          <div style={{ display: 'flex', gap: '15px' }}>
-            <button onClick={() => setShowAiWarning(false)} style={{ padding: '12px 24px', background: '#3f3f46', border: 'none', borderRadius: '8px', color: '#fff', cursor: 'pointer', fontWeight: 600 }}>Cancel</button>
-            <button onClick={startBrainstorm} style={{ padding: '12px 24px', background: '#8b5cf6', border: 'none', borderRadius: '8px', color: '#fff', cursor: 'pointer', fontWeight: 600 }}>Accept & Download</button>
+      <div style={{ flex: 1, padding: '20px', overflowY: 'auto' }}>
+        {showAiWarning && (
+          <div style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.2)', color: '#fca5a5', padding: '12px', borderRadius: '8px', marginBottom: '15px', fontSize: '14px' }}>
+            <strong>Local AI Not Ready.</strong> The system is still loading the Web-LLM model. This can take several minutes the first time as it downloads the neural network weights to your browser cache.
           </div>
-        </div>
-      )}
+        )}
+        
+        {isAiLoading && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', color: '#60a5fa', marginBottom: '20px', padding: '15px', background: 'rgba(59, 130, 246, 0.1)', borderRadius: '8px', border: '1px solid rgba(59, 130, 246, 0.2)' }}>
+            <BrainCircuit className="spin-slow" size={20} />
+            <span style={{ fontSize: '14px', fontWeight: 500 }}>{aiProgress}</span>
+          </div>
+        )}
 
-      {isAiLoading && (
-        <div style={{
-          position: 'absolute', top: 0, left: 0, width: '100%', height: '100%',
-          background: 'rgba(24, 24, 27, 0.95)', backdropFilter: 'blur(5px)',
-          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-          zIndex: 500, padding: '40px', textAlign: 'center'
-        }}>
-          <BrainCircuit size={48} color="#8b5cf6" style={{ marginBottom: '20px' }} />
-          <h3 style={{ margin: '0 0 15px', fontSize: '20px', color: '#fff' }}>Brainstorming...</h3>
-          <p style={{ color: '#a1a1aa', fontSize: '14px', lineHeight: '1.6', wordBreak: 'break-word', whiteSpace: 'pre-wrap' }}>
-            {aiProgress}
-          </p>
-        </div>
-      )}
+        {youtubeId && !isAiLoading && (
+          <div style={{ marginBottom: '20px', borderRadius: '12px', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.1)' }}>
+            <iframe width="100%" height="240" src={`https://www.youtube.com/embed/${youtubeId}`} frameBorder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen />
+          </div>
+        )}
 
-      <div 
-        style={{ flex: 1, padding: '20px', display: 'flex', flexDirection: 'column', overflowY: 'auto' }}
-      >
+        {!youtubeId && isImage && !isAiLoading && (
+          <div style={{ marginBottom: '20px', borderRadius: '12px', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.1)' }}>
+            <img src={useGraphStore.getState().nodes.find(n => n.id === selectedNodeId)?.imageUrl} alt="Node Graphic" style={{ width: '100%', display: 'block' }} />
+          </div>
+        )}
+
         {isPreview ? (
-          <div style={{ color: '#e4e4e7', fontSize: '15px', lineHeight: '1.6', fontFamily: 'sans-serif', wordBreak: 'break-word' }}>
-            <ReactMarkdown 
-              remarkPlugins={[remarkGfm]}
-              urlTransform={(value: string) => value}
-            >
-              {text || '*No notes yet. Switch to Edit mode to write.*'}
-            </ReactMarkdown>
+          <div className="prose prose-invert max-w-none" style={{ color: '#e4e4e7', lineHeight: '1.7' }}>
+            {text ? <ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown> : <span style={{color: '#71717a', fontStyle: 'italic'}}>No content...</span>}
           </div>
         ) : (
           <textarea
             value={text}
-            onChange={e => setText(e.target.value)}
-            onDragOver={e => { e.preventDefault(); e.stopPropagation(); }}
-            onDrop={handleDrop}
-            placeholder={isImage ? "Add notes to this image...\n(Drag & Drop images here to attach them inline)" : "Write your deep thoughts here in Markdown...\n(Drag & Drop images here to attach them inline)"}
+            onChange={(e) => {
+               setText(e.target.value);
+               useGraphStore.getState().updateNodeDetails(selectedNodeId, e.target.value);
+            }}
+            placeholder="Type your markdown thoughts here... You can also drag & drop images!"
             style={{
-              flex: 1, width: '100%', background: 'transparent', border: 'none', 
-              color: '#e4e4e7', fontSize: '15px', lineHeight: '1.6', outline: 'none', resize: 'none',
-              fontFamily: 'monospace'
+              width: '100%', height: '100%', minHeight: '300px', background: 'transparent', color: '#e4e4e7',
+              border: 'none', resize: 'none', outline: 'none', fontSize: '15px', lineHeight: '1.7', fontFamily: 'monospace'
             }}
           />
         )}
       </div>
-      <div style={{ padding: '20px', borderTop: '1px solid #3f3f46', display: 'flex', flexWrap: 'wrap', gap: '10px', justifyContent: 'space-between', alignItems: 'center' }}>
-        
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
-          <button 
-            onClick={() => setShowAiWarning(true)}
-            style={{
-              display: 'flex', alignItems: 'center', gap: '8px', background: '#8b5cf6', color: '#fff',
-              border: 'none', padding: '10px 16px', borderRadius: '8px', cursor: 'pointer', fontWeight: 600
-            }}
-            title="Download & Run Local AI Model to brainstorm related concepts"
-          >
-            <BrainCircuit size={18} />
-            Brainstorm
-          </button>
 
+      <div style={{ padding: '16px 20px', borderTop: '1px solid rgba(255,255,255,0.1)', display: 'flex', flexDirection: 'column', gap: '10px', background: 'rgba(0,0,0,0.2)', borderBottomLeftRadius: '24px', borderBottomRightRadius: '24px' }}>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <button 
+            onClick={startBrainstorm}
+            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', background: '#a855f7', color: '#fff', border: 'none', padding: '8px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, fontSize: '13px', flex: 1 }}
+          >
+            <BrainCircuit size={14} /> Brainstorm
+          </button>
+          
           <button 
             onClick={startDevilsAdvocate}
-            style={{
-              display: 'flex', alignItems: 'center', gap: '8px', background: '#ea580c', color: '#fff',
-              border: 'none', padding: '10px 16px', borderRadius: '8px', cursor: 'pointer', fontWeight: 600
-            }}
-            title="Generate counter-arguments using AI"
+            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', background: '#ea580c', color: '#fff', border: 'none', padding: '8px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, fontSize: '13px', flex: 1 }}
           >
-            <BrainCircuit size={18} />
-            Devil's Advocate
+            <Target size={14} /> Advocate
           </button>
+        </div>
 
+        <div style={{ display: 'flex', gap: '8px' }}>
           <button 
             onClick={startGhostLinks}
-            style={{
-              display: 'flex', alignItems: 'center', gap: '8px', background: '#d946ef', color: '#fff',
-              border: 'none', padding: '10px 16px', borderRadius: '8px', cursor: 'pointer', fontWeight: 600
-            }}
+            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#d946ef', color: '#fff', border: 'none', padding: '8px', borderRadius: '6px', cursor: 'pointer', flex: 1 }}
             title="Find serendipitous ghost links"
           >
-            <Link size={18} />
+            <Link size={16} />
           </button>
           
           <button 
@@ -474,62 +409,44 @@ export function MarkdownEditor() {
               setCurrentParentId(selectedNodeId);
               setSelectedNodeId(null);
             }}
-            style={{
-              display: 'flex', alignItems: 'center', gap: '8px', background: '#10b981', color: '#fff',
-              border: 'none', padding: '10px 16px', borderRadius: '8px', cursor: 'pointer', fontWeight: 600
-            }}
-            title="Dive into this node to map concepts inside it"
+            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#10b981', color: '#fff', border: 'none', padding: '8px', borderRadius: '6px', cursor: 'pointer', flex: 1 }}
+            title="Dive into this node"
           >
-            <ZoomIn size={18} />
+            <ZoomIn size={16} />
           </button>
 
           <button 
             onClick={() => {
-              if (activeFocusId === selectedNodeId) {
-                setActiveFocusId(null);
-              } else {
-                setActiveFocusId(selectedNodeId);
-              }
+              if (activeFocusId === selectedNodeId) setActiveFocusId(null);
+              else setActiveFocusId(selectedNodeId);
             }}
-            style={{
-              display: 'flex', alignItems: 'center', gap: '8px', background: activeFocusId === selectedNodeId ? '#fbbf24' : '#64748b', color: '#fff',
-              border: 'none', padding: '10px 16px', borderRadius: '8px', cursor: 'pointer', fontWeight: 600
-            }}
-            title="Focus Mode (Highlight Train of Thought)"
+            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', background: activeFocusId === selectedNodeId ? '#fbbf24' : '#64748b', color: '#fff', border: 'none', padding: '8px', borderRadius: '6px', cursor: 'pointer', flex: 1 }}
+            title="Focus Mode"
           >
-            <Target size={18} />
+            <Target size={16} />
           </button>
 
           <button 
             onClick={() => {
-               if (window.confirm("Are you sure you want to delete this thought?")) {
+               if (window.confirm("Delete this thought?")) {
                   useGraphStore.getState().deleteNode(selectedNodeId);
                   useGraphStore.getState().setSelectedNodeId(null);
                   setTimeout(syncGraph, 100);
                }
             }}
-            style={{
-              display: 'flex', alignItems: 'center', gap: '8px', background: '#ef4444', color: '#fff',
-              border: 'none', padding: '10px 16px', borderRadius: '8px', cursor: 'pointer', fontWeight: 600
-            }}
-            title="Delete this node completely"
+            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#ef4444', color: '#fff', border: 'none', padding: '8px', borderRadius: '6px', cursor: 'pointer', flex: 1 }}
+            title="Delete this node"
           >
-            <Trash2 size={18} />
+            <Trash2 size={16} />
           </button>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <button 
-            onClick={handleSave}
-            style={{
-              display: 'flex', alignItems: 'center', gap: '8px', background: '#3b82f6', color: '#fff',
-              border: 'none', padding: '10px 16px', borderRadius: '8px', cursor: 'pointer', fontWeight: 600
-            }}
-          >
-            <Save size={18} />
-            Save & Close
-          </button>
-        </div>
+        <button 
+          onClick={handleSave}
+          style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', background: '#3b82f6', color: '#fff', border: 'none', padding: '10px 16px', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, fontSize: '14px', width: '100%', marginTop: '4px' }}
+        >
+          <Save size={16} /> Save & Close
+        </button>
       </div>
     </div>
   );

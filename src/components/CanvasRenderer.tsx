@@ -474,13 +474,19 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ onDoubleClick })
         const baseColor = node.isDateNode ? '#3b82f6' : (node.isCategory ? '#a855f7' : (node.color || '#8b5cf6'));
         
         if (baseColor.startsWith('#')) {
-          const grad = ctx.createRadialGradient(node.x, node.y, 0, node.x, node.y, animatedSize);
-          grad.addColorStop(0.3, baseColor + 'ff');
-          grad.addColorStop(0.8, baseColor + 'aa');
-          grad.addColorStop(1, baseColor + '00');
-          ctx.fillStyle = grad;
-          ctx.shadowColor = baseColor;
-          ctx.shadowBlur = 15;
+          if (node.shape && node.shape !== 'circle') {
+            ctx.fillStyle = baseColor + 'ee';
+            ctx.shadowColor = baseColor;
+            ctx.shadowBlur = 15;
+          } else {
+            const grad = ctx.createRadialGradient(node.x, node.y, 0, node.x, node.y, animatedSize);
+            grad.addColorStop(0.3, baseColor + 'ff');
+            grad.addColorStop(0.8, baseColor + 'aa');
+            grad.addColorStop(1, baseColor + '00');
+            ctx.fillStyle = grad;
+            ctx.shadowColor = baseColor;
+            ctx.shadowBlur = 15;
+          }
         } else {
           ctx.fillStyle = baseColor;
         }

@@ -741,7 +741,7 @@ export default function App() {
       <div 
         style={{ 
           position: 'absolute', top: 20, left: 20, 
-          display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '8px', 
+          display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '6px', 
           zIndex: 10, maxHeight: 'calc(100vh - 40px)', overflowY: 'auto', paddingRight: '10px',
           scrollbarWidth: 'none', msOverflowStyle: 'none'
         }}
@@ -1230,42 +1230,42 @@ export default function App() {
         ))}
       </div>
 
-      {/* Zoom UI Widget */}
+      {/* Navigation Tool Bar (Zoom UI Widget) */}
       <div style={{
-        position: 'absolute', bottom: 190, right: 30, zIndex: 10,
-        display: 'flex', flexDirection: 'column', gap: '8px',
-        background: 'rgba(24, 24, 27, 0.4)', backdropFilter: 'blur(30px)', WebkitBackdropFilter: 'blur(30px)',
+        position: 'absolute', bottom: 30, left: '50%', transform: 'translateX(-50%)', zIndex: 100,
+        display: 'flex', flexDirection: 'row', gap: '8px', alignItems: 'center',
+        background: 'rgba(24, 24, 27, 0.8)', backdropFilter: 'blur(30px)', WebkitBackdropFilter: 'blur(30px)',
         padding: '8px', borderRadius: '16px', border: '1px solid rgba(255, 255, 255, 0.08)',
         boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.5)'
       }}>
         <button onClick={() => window.dispatchEvent(new CustomEvent('zoomIn'))} style={{ background: 'transparent', border: 'none', color: '#fff', cursor: 'pointer', padding: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="Zoom In">
-          <ZoomIn size={20} />
+          <ZoomIn size={18} />
         </button>
-        <div style={{ height: '1px', background: 'rgba(63, 63, 70, 0.5)', width: '100%' }} />
+        <div style={{ width: '1px', background: 'rgba(63, 63, 70, 0.5)', height: '24px' }} />
         <button onClick={() => window.dispatchEvent(new CustomEvent('recenter'))} style={{ background: 'transparent', border: 'none', color: '#fff', cursor: 'pointer', padding: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="Recenter (Reset Zoom)">
-          <Target size={20} />
+          <Target size={18} />
         </button>
-        <div style={{ height: '1px', background: 'rgba(63, 63, 70, 0.5)', width: '100%' }} />
+        <div style={{ width: '1px', background: 'rgba(63, 63, 70, 0.5)', height: '24px' }} />
         <button onClick={() => window.dispatchEvent(new CustomEvent('zoomOut'))} style={{ background: 'transparent', border: 'none', color: '#fff', cursor: 'pointer', padding: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="Zoom Out">
-          <ZoomOut size={20} />
+          <ZoomOut size={18} />
         </button>
-        <div style={{ height: '1px', background: 'rgba(63, 63, 70, 0.5)', width: '100%' }} />
-        <button onClick={() => setShowQuickPad(!showQuickPad)} style={{ background: '#27272a', color: '#fff', border: '1px solid #3f3f46', padding: '12px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="Embedded Quick-Pad">
-          <PenTool size={20} />
+        <div style={{ width: '1px', background: 'rgba(63, 63, 70, 0.5)', height: '24px' }} />
+        <button onClick={() => setShowQuickPad(!showQuickPad)} style={{ background: showQuickPad ? '#10b981' : '#27272a', color: '#fff', border: '1px solid #3f3f46', padding: '8px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }} title="Embedded Quick-Pad">
+          <PenTool size={18} />
         </button>
-        <button onClick={() => setShowSync(true)} style={{ background: '#27272a', color: isP2PConnected ? '#10b981' : '#fff', border: '1px solid #3f3f46', padding: '12px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="P2P Multiplayer">
-          <Network size={20} />
+        <button onClick={() => setShowSync(true)} style={{ background: '#27272a', color: isP2PConnected ? '#10b981' : '#fff', border: '1px solid #3f3f46', padding: '8px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }} title="P2P Multiplayer">
+          <Network size={18} />
         </button>
-        <div style={{ height: '1px', background: 'rgba(63, 63, 70, 0.5)', width: '100%' }} />
+        <div style={{ width: '1px', background: 'rgba(63, 63, 70, 0.5)', height: '24px' }} />
         <button onClick={() => setShowListView(true)} style={{ background: 'transparent', border: 'none', color: '#fff', cursor: 'pointer', padding: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="List View">
-          <AlignLeft size={20} />
+          <AlignLeft size={18} />
         </button>
-        <div style={{ height: '1px', background: 'rgba(63, 63, 70, 0.5)', width: '100%' }} />
+        <div style={{ width: '1px', background: 'rgba(63, 63, 70, 0.5)', height: '24px' }} />
         <button onClick={() => {
           setShowReplay(!showReplay);
           if (showReplay) useGraphStore.getState().setTimeFilter(null);
-        }} style={{ background: 'transparent', border: 'none', color: showReplay ? '#3b82f6' : '#fff', cursor: 'pointer', padding: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="Time Machine">
-          <Clock size={20} />
+        }} style={{ background: 'transparent', border: 'none', color: showReplay ? '#3b82f6' : '#fff', cursor: 'pointer', padding: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }} title="Time Machine">
+          <Clock size={18} />
         </button>
       </div>
 

@@ -72,11 +72,12 @@ export const CalendarSidebar: React.FC<CalendarSidebarProps> = ({ isOpen, onClos
       top: 0,
       right: isOpen ? 0 : '-320px',
       width: '300px',
-      height: '100vh',
+      height: 'calc(100vh - 80px)',
       background: 'rgba(24, 24, 27, 0.85)',
       backdropFilter: 'blur(12px)',
       WebkitBackdropFilter: 'blur(12px)',
       borderLeft: '1px solid rgba(39, 39, 42, 0.5)',
+      borderBottomLeftRadius: '24px',
       transition: 'right 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
       zIndex: 50,
       padding: '20px',
@@ -107,6 +108,24 @@ export const CalendarSidebar: React.FC<CalendarSidebarProps> = ({ isOpen, onClos
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '2px' }}>
         {renderDays()}
       </div>
+
+      <button 
+        onClick={() => setSelectedDate(null)}
+        style={{
+          marginTop: '20px',
+          width: '100%',
+          padding: '10px',
+          background: selectedDate === null ? '#3b82f6' : '#27272a',
+          color: '#fff',
+          border: selectedDate === null ? '1px solid #60a5fa' : '1px solid #3f3f46',
+          borderRadius: '8px',
+          cursor: 'pointer',
+          fontWeight: 600,
+          transition: 'all 0.2s'
+        }}
+      >
+        View All Thoughts
+      </button>
       
       <div style={{ marginTop: 'auto', fontSize: '0.85rem', color: '#71717a' }}>
         <p>• Click a day to filter thoughts.</p>

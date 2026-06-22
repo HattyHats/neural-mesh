@@ -66,38 +66,45 @@ export function ListViewModal({ onClose }: { onClose: () => void }) {
                     <div style={{ color: '#9ca3af', fontSize: '12px', minWidth: '70px', paddingTop: '4px' }}>
                       {node.timeString || '---'}
                     </div>
-                    <textarea
-                      defaultValue={node.text}
-                      onBlur={(e) => {
-                        updateNodeText(node.id, e.target.value);
-                        e.target.style.border = '1px solid transparent';
-                      }}
-                      style={{
-                        flex: 1,
-                        background: 'transparent',
-                        border: '1px solid transparent',
-                        color: '#eee',
-                        fontSize: '15px',
-                        lineHeight: '1.5',
-                        fontFamily: 'inherit',
-                        resize: 'none',
-                        overflow: 'hidden',
-                        minHeight: '24px',
-                        padding: '2px 4px',
-                        borderRadius: '4px',
-                        transition: 'border 0.2s'
-                      }}
-                      onFocus={(e) => {
-                        e.target.style.border = '1px solid rgba(59, 130, 246, 0.5)';
-                        e.target.style.height = 'auto';
-                        e.target.style.height = e.target.scrollHeight + 'px';
-                      }}
-                      onInput={(e) => {
-                        const target = e.target as HTMLTextAreaElement;
-                        target.style.height = 'auto';
-                        target.style.height = target.scrollHeight + 'px';
-                      }}
-                    />
+                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+                      <textarea
+                        defaultValue={node.text}
+                        onBlur={(e) => {
+                          updateNodeText(node.id, e.target.value);
+                          e.target.style.border = '1px solid transparent';
+                        }}
+                        style={{
+                          width: '100%',
+                          background: 'transparent',
+                          border: '1px solid transparent',
+                          color: '#eee',
+                          fontSize: '15px',
+                          lineHeight: '1.5',
+                          fontFamily: 'inherit',
+                          resize: 'none',
+                          overflow: 'hidden',
+                          minHeight: '24px',
+                          padding: '2px 4px',
+                          borderRadius: '4px',
+                          transition: 'border 0.2s'
+                        }}
+                        onFocus={(e) => {
+                          e.target.style.border = '1px solid rgba(59, 130, 246, 0.5)';
+                          e.target.style.height = 'auto';
+                          e.target.style.height = e.target.scrollHeight + 'px';
+                        }}
+                        onInput={(e) => {
+                          const target = e.target as HTMLTextAreaElement;
+                          target.style.height = 'auto';
+                          target.style.height = target.scrollHeight + 'px';
+                        }}
+                      />
+                      {node.details && (
+                        <div style={{ color: '#a1a1aa', fontSize: '13px', marginTop: '4px', paddingLeft: '8px', borderLeft: '2px solid rgba(255,255,255,0.1)', whiteSpace: 'pre-wrap' }}>
+                          {node.details}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
