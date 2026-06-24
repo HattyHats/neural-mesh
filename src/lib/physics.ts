@@ -41,6 +41,7 @@ export function applyPhysics(nodes: Node[], edges: Edge[], dt: number): Node[] {
 
   for (let i = 0; i < newNodes.length; i++) {
     const nodeA = newNodes[i];
+    if (nodeA.isGroup) continue; // Groups are entirely immune to physics forces
     let fx = 0;
     let fy = 0;
 
@@ -48,7 +49,37 @@ export function applyPhysics(nodes: Node[], edges: Edge[], dt: number): Node[] {
     for (let j = 0; j < newNodes.length; j++) {
       if (i === j) continue;
       const nodeB = newNodes[j];
-      if (nodeA.isGroup || nodeB.isGroup) continue;
+      
+      if (nodeB.isGroup) {
+         if (nodeA.groupId === nodeB.id) continue; // Node belongs inside the group
+         if (nodeA.date !== nodeB.date) continue; // Different dates ignore each other
+         
+         const w = nodeB.width || 400;
+         const h = nodeB.height || 400;
+         const dx = nodeA.x - nodeB.x;
+         const dy = nodeA.y - nodeB.y;
+         
+         const margin = getEffectiveRadius(nodeA) + 20;
+         const rightEdge = w/2 + margin;
+         const bottomEdge = h/2 + margin;
+         
+         if (Math.abs(dx) < rightEdge && Math.abs(dy) < bottomEdge) {
+            const distToRight = rightEdge - dx;
+            const distToLeft = dx - (-rightEdge); 
+            const distToBottom = bottomEdge - dy;
+            const distToTop = dy - (-bottomEdge);
+            
+            const minDist = Math.min(distToRight, distToLeft, distToBottom, distToTop);
+            const force = minDist * 10; 
+            
+            if (minDist === distToRight) fx += force;
+            else if (minDist === distToLeft) fx -= force;
+            else if (minDist === distToBottom) fy += force;
+            else if (minDist === distToTop) fy -= force;
+         }
+         continue;
+      }
+      
       const dx = nodeA.x - nodeB.x;
       const dy = nodeA.y - nodeB.y;
       const distSq = dx * dx + dy * dy;
@@ -61,8 +92,7 @@ export function applyPhysics(nodes: Node[], edges: Edge[], dt: number): Node[] {
 
       // Push thoughts from different dates away from each other
       if (nodeA.date !== nodeB.date) {
-         safeDistance += 150;
-         repulsionForce *= 5; // Stronger push to separate date clusters
+         continue; // Do not apply physical repulsion across different dates
       }
       
       const safeDistSq = safeDistance * safeDistance;

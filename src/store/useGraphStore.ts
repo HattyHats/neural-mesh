@@ -31,6 +31,7 @@ export interface Node {
   height?: number;
   embedUrl?: string;
   isGhost?: boolean;
+  groupId?: string;
 }
 
 export interface Edge {
@@ -89,6 +90,8 @@ export interface GraphState {
   undo: () => void;
   redo: () => void;
   updateNodeDetails: (id: string, details: string) => void;
+  updateNodeText: (id: string, text: string) => void;
+  setNodeGroup: (id: string, groupId?: string) => void;
   updateNodeRadius: (id: string, radius: number) => void;
   mergeNodes: (targetId: string, sourceId: string) => void;
   deleteNode: (id: string) => void;
@@ -101,6 +104,7 @@ export interface GraphState {
   setPeerCursor: (cursor: { x: number, y: number } | null) => void;
   setPeerLockedNode: (id: string | null) => void;
   setIsP2PConnected: (isConnected: boolean) => void;
+  tidyGraph: () => void;
 }
 
 export const useGraphStore = create<GraphState>((set) => ({
@@ -157,7 +161,24 @@ export const useGraphStore = create<GraphState>((set) => ({
       return { edges: [...state.edges, { source, target }] };
     });
   },
-  setGraph: (nodes, edges, vaultSalt) => set({ nodes, edges, past: [], future: [], vaultSalt: vaultSalt || null, vaultKey: null }),
+  setGraph: (nodes, edges, vaultSalt) => set(() => {
+    const updatedNodes = nodes.map(n => ({ ...n }));
+    updatedNodes.forEach(n => {
+      if (!n.isGroup && !n.groupId) {
+        const targetGroup = updatedNodes.slice().reverse().find(g => {
+          if (!g.isGroup) return false;
+          const w = g.width || 400;
+          const h = g.height || 400;
+          return n.x >= g.x - w/2 && n.x <= g.x + w/2 &&
+                 n.y >= g.y - h/2 && n.y <= g.y + h/2;
+        });
+        if (targetGroup) {
+          n.groupId = targetGroup.id;
+        }
+      }
+    });
+    return { nodes: updatedNodes, edges, past: [], future: [], vaultSalt: vaultSalt || null, vaultKey: null };
+  }),
   updatePhysics: (nodes, edges) => set({ nodes, edges }),
   clearGraph: () => {
     set({ nodes: [], edges: [], vaultSalt: null, vaultKey: null, selectedDate: null });
@@ -203,6 +224,12 @@ export const useGraphStore = create<GraphState>((set) => ({
   }),
   updateNodeDetails: (id, details) => set((state) => ({
     nodes: state.nodes.map(n => n.id === id ? { ...n, details, lastInteraction: Date.now(), interactionCount: (n.interactionCount || 0) + 1 } : n)
+  })),
+  updateNodeText: (id, text) => set((state) => ({
+    nodes: state.nodes.map(n => n.id === id ? { ...n, text, lastInteraction: Date.now() } : n)
+  })),
+  setNodeGroup: (id, groupId) => set((state) => ({
+    nodes: state.nodes.map(n => n.id === id ? { ...n, groupId, lastInteraction: Date.now() } : n)
   })),
   updateNodeRadius: (id, radius) => {
     set(state => ({
@@ -290,5 +317,22 @@ export const useGraphStore = create<GraphState>((set) => ({
   setTheme: (theme) => set({ theme: theme as any }),
   setPeerCursor: (cursor) => set({ peerCursor: cursor }),
   setPeerLockedNode: (id) => set({ peerLockedNodeId: id }),
-  setIsP2PConnected: (isConnected) => set({ isP2PConnected: isConnected })
+  setIsP2PConnected: (isConnected) => set({ isP2PConnected: isConnected }),
+  tidyGraph: () => set(state => {
+    const newNodes = state.nodes.map(n => ({ ...n }));
+    const floatingNodes = newNodes.filter(n => !n.isGroup && !n.isSticky && !n.groupId);
+    const otherNodes = newNodes.filter(n => n.isGroup || n.isSticky || n.groupId);
+    
+    // Arrange floating nodes in a beautiful Phyllotaxis spiral
+    floatingNodes.forEach((n, i) => {
+       const angle = i * 137.5 * (Math.PI / 180);
+       const radius = 100 * Math.sqrt(i);
+       n.x = radius * Math.cos(angle);
+       n.y = radius * Math.sin(angle);
+       n.vx = 0;
+       n.vy = 0;
+    });
+    
+    return { nodes: [...otherNodes, ...floatingNodes] };
+  })
 }));

@@ -1,7 +1,8 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useGraphStore } from '../store/useGraphStore';
 import { broadcastCursor, broadcastNodeMove, broadcastNodeLock, syncGraph } from '../lib/webrtc';
 import { applyPhysics } from '../lib/physics';
+import { Palette, Trash2, Hexagon, Circle, Square } from 'lucide-react';
 
 interface CanvasRendererProps {
   onDoubleClick: (x: number, y: number, nodeId?: string) => void;
@@ -61,6 +62,11 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ onDoubleClick })
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const setGraph = useGraphStore(state => state.setGraph);
   const addEdge = useGraphStore(state => state.addEdge);
+  
+  const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
+  const [hoverPos, setHoverPos] = useState({ x: 0, y: 0 });
+  const [contextMenuNodeId, setContextMenuNodeId] = useState<string | null>(null);
+  const [contextMenuPos, setContextMenuPos] = useState({ x: 0, y: 0 });
   
   const transformRef = useRef({ x: window.innerWidth / 2, y: window.innerHeight / 2, scale: 1 });
   const isDraggingCanvasRef = useRef(false);
@@ -381,6 +387,37 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ onDoubleClick })
             ctx.lineTo(arrowTipX - 12 * Math.cos(angle + Math.PI / 6), arrowTipY - 12 * Math.sin(angle + Math.PI / 6));
             ctx.closePath();
             ctx.fill();
+          }
+
+          // Draw Neural Energy Particle
+          if (!edge.isGhost && dist > targetRadius + 20) {
+            const time = Date.now();
+            const phase = (time % 2000) / 2000; // 0 to 1 over 2 seconds
+            const startX = source.x + 20 * Math.cos(angle);
+            const startY = source.y + 20 * Math.sin(angle);
+            const travelDist = dist - 20 - targetRadius - 10;
+            
+            const targetColor = target.color || (target.isDateNode ? '#3b82f6' : (target.isCategory ? '#a855f7' : '#8b5cf6'));
+            ctx.fillStyle = targetColor;
+            ctx.shadowColor = targetColor;
+            
+            // Primary particle
+            const particleX = startX + travelDist * phase * Math.cos(angle);
+            const particleY = startY + travelDist * phase * Math.sin(angle);
+            ctx.shadowBlur = 15;
+            ctx.beginPath();
+            ctx.arc(particleX, particleY, 3, 0, 2 * Math.PI);
+            ctx.fill();
+            
+            // Secondary staggered particle
+            const phase2 = ((time + 1000) % 2000) / 2000;
+            const particleX2 = startX + travelDist * phase2 * Math.cos(angle);
+            const particleY2 = startY + travelDist * phase2 * Math.sin(angle);
+            ctx.beginPath();
+            ctx.arc(particleX2, particleY2, 2, 0, 2 * Math.PI);
+            ctx.fill();
+            
+            ctx.shadowBlur = 0;
           }
 
           // Draw Label
@@ -741,6 +778,10 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ onDoubleClick })
       });
       if (clicked && (clicked.isDateNode || clicked.isCategory)) {
         state.toggleCollapse(clicked.id);
+      } else if (clicked && !clicked.isGroup) {
+        setContextMenuNodeId(clicked.id);
+        setContextMenuPos({ x: e.clientX, y: e.clientY });
+        setHoveredNodeId(null);
       }
     };
     canvas.addEventListener('contextmenu', handleContextMenu);
@@ -753,6 +794,10 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ onDoubleClick })
   }, [setGraph, onDoubleClick]);
 
   const handleMouseDown = (e: React.MouseEvent) => {
+    if (e.button === 2) return; // Completely ignore right-clicks here to prevent selection/opening
+    
+    setContextMenuNodeId(null);
+    setHoveredNodeId(null);
     const pos = getCanvasPos(e.clientX, e.clientY);
     lastMouseRef.current = { x: e.clientX, y: e.clientY };
     didDragRef.current = false;
@@ -832,12 +877,37 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ onDoubleClick })
     const dx = e.clientX - lastMouseRef.current.x;
     const dy = e.clientY - lastMouseRef.current.y;
     
-    if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
+    if ((nodeDraggingRef.current || isDraggingCanvasRef.current || lassoStartRef.current) && (Math.abs(dx) > 3 || Math.abs(dy) > 3)) {
       didDragRef.current = true;
     }
 
     if (!didDragRef.current && (nodeDraggingRef.current || isDraggingCanvasRef.current)) {
        return; // Ignore micro-twitches on click
+    }
+    
+    if (!isDraggingCanvasRef.current && !nodeDraggingRef.current && !lassoStartRef.current && !contextMenuNodeId) {
+      const state = useGraphStore.getState();
+      const hovered = state.nodes.slice().reverse().find(n => {
+        if (n.isGroup) return false;
+        if (n.isSticky) {
+          const baseSize = n.radius || (n.isDateNode ? 30 : (n.isCategory ? 35 : 25));
+          const w = n.width || baseSize * 4;
+          const h = n.height || baseSize * 4;
+          return pos.x >= n.x - w/2 && pos.x <= n.x + w/2 && pos.y >= n.y - h/2 && pos.y <= n.y + h/2;
+        } else {
+          const baseSize = n.radius || (n.isDateNode ? 30 : (n.isCategory ? 35 : 25));
+          const dx = n.x - pos.x;
+          const dy = n.y - pos.y;
+          return dx * dx + dy * dy < baseSize * baseSize;
+        }
+      });
+      
+      setHoveredNodeId(hovered ? hovered.id : null);
+      if (hovered) {
+         setHoverPos({ x: e.clientX, y: e.clientY });
+      }
+    } else {
+      if (hoveredNodeId) setHoveredNodeId(null);
     }
 
     if (nodeResizingRef.current) {
@@ -888,21 +958,14 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ onDoubleClick })
         
         draggedNode.x += moveX;
         draggedNode.y += moveY;
+        draggedNode.vx = 0;
+        draggedNode.vy = 0;
 
         if (draggedNode.isGroup) {
-           const w = draggedNode.width || 400;
-           const h = draggedNode.height || 400;
-           const left = draggedNode.x - moveX - w/2;
-           const right = draggedNode.x - moveX + w/2;
-           const top = draggedNode.y - moveY - h/2;
-           const bottom = draggedNode.y - moveY + h/2;
-           
            state.nodes.forEach(n => {
-             if (n.id !== draggedNode.id && !n.isGroup && !n.isLocked) {
-               if (n.x >= left && n.x <= right && n.y >= top && n.y <= bottom) {
-                 n.x += moveX;
-                 n.y += moveY;
-               }
+             if (n.groupId === draggedNode.id && !n.isLocked) {
+                n.x += moveX;
+                n.y += moveY;
              }
            });
         } else if (state.selectedNodeIds.includes(draggedNode.id)) {
@@ -965,13 +1028,27 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ onDoubleClick })
       } else {
         const draggedNode = state.nodes.find(n => n.id === nodeDraggingRef.current);
         if (draggedNode) {
+          if (!draggedNode.isGroup) {
+            const targetGroup = state.nodes.slice().reverse().find(g => {
+              if (!g.isGroup) return false;
+              const w = g.width || 400;
+              const h = g.height || 400;
+              return draggedNode.x >= g.x - w/2 && draggedNode.x <= g.x + w/2 &&
+                     draggedNode.y >= g.y - h/2 && draggedNode.y <= g.y + h/2;
+            });
+            if (targetGroup) {
+              state.setNodeGroup(draggedNode.id, targetGroup.id);
+            } else {
+              state.setNodeGroup(draggedNode.id, undefined);
+            }
+          }
           const target = state.nodes.find(n => {
             if (n.id === draggedNode.id) return false;
             const r1 = draggedNode.radius || 25;
             const r2 = n.radius || 25;
             return Math.sqrt(Math.pow(n.x - draggedNode.x, 2) + Math.pow(n.y - draggedNode.y, 2)) < (r1 + r2) / 2 + 10;
           });
-          if (target && !target.isDateNode && !draggedNode.isDateNode && !target.isCategory && !draggedNode.isCategory && !target.isLocked && !draggedNode.isLocked) {
+          if (target && !target.isDateNode && !draggedNode.isDateNode && !target.isCategory && !draggedNode.isCategory && !target.isLocked && !draggedNode.isLocked && !target.isGroup && !draggedNode.isGroup && !target.isSticky && !draggedNode.isSticky) {
             state.saveHistory();
             state.mergeNodes(target.id, draggedNode.id);
             setTimeout(syncGraph, 100);
@@ -1027,16 +1104,101 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ onDoubleClick })
     onDoubleClick(pos.x, pos.y);
   };
 
+  const contextNode = contextMenuNodeId ? useGraphStore.getState().nodes.find(n => n.id === contextMenuNodeId) : null;
+  const hoveredNode = hoveredNodeId ? useGraphStore.getState().nodes.find(n => n.id === hoveredNodeId) : null;
+
   return (
-    <canvas
-      ref={canvasRef}
-      /* eslint-disable-next-line react-hooks/refs */
-      style={{ display: 'block', width: '100vw', height: '100vh', cursor: isDraggingCanvasRef.current ? 'grabbing' : 'grab' }}
-      onMouseDown={handleMouseDown}
-      onMouseMove={handleMouseMove}
-      onMouseUp={handleMouseUp}
-      onWheel={handleWheel}
-      onDoubleClick={handleDoubleClick}
-    />
+    <>
+      <canvas
+        ref={canvasRef}
+        /* eslint-disable-next-line react-hooks/refs */
+        style={{ display: 'block', width: '100vw', height: '100vh', cursor: isDraggingCanvasRef.current ? 'grabbing' : 'grab' }}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onWheel={handleWheel}
+        onDoubleClick={handleDoubleClick}
+      />
+      
+      {/* Hover Preview */}
+      {hoveredNode && !contextMenuNodeId && !isDraggingCanvasRef.current && !nodeDraggingRef.current && (
+        <div style={{
+          position: 'absolute',
+          left: hoverPos.x + 20,
+          top: hoverPos.y + 20,
+          background: 'rgba(24, 24, 27, 0.7)',
+          backdropFilter: 'blur(12px)',
+          border: '1px solid rgba(255, 255, 255, 0.1)',
+          borderRadius: '12px',
+          padding: '12px 16px',
+          color: '#fff',
+          pointerEvents: 'none',
+          maxWidth: '300px',
+          boxShadow: '0 10px 30px rgba(0,0,0,0.5)',
+          zIndex: 100,
+          animation: 'fadeIn 0.2s ease-out'
+        }}>
+          <h4 style={{ margin: '0 0 8px 0', fontSize: '16px', fontWeight: 600, color: hoveredNode.color || '#e4e4e7' }}>
+            {hoveredNode.text || 'Untitled'}
+          </h4>
+          {hoveredNode.details && (
+            <p style={{ margin: 0, fontSize: '13px', color: '#a1a1aa', display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+              {hoveredNode.details.substring(0, 150)}...
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Radial Context Menu */}
+      {contextMenuNodeId && contextNode && (
+        <div 
+           style={{
+             position: 'absolute',
+             left: contextMenuPos.x,
+             top: contextMenuPos.y,
+             width: '0px', height: '0px',
+             zIndex: 200,
+             pointerEvents: 'none'
+           }}
+        >
+          <div style={{ position: 'absolute', left: -70, top: -70, pointerEvents: 'auto' }}>
+            <button 
+              onClick={() => { useGraphStore.getState().updateNodeShape(contextMenuNodeId, 'circle'); setContextMenuNodeId(null); setTimeout(syncGraph, 100); }}
+              style={{ background: '#3f3f46', border: 'none', borderRadius: '50%', width: '40px', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', cursor: 'pointer', boxShadow: '0 4px 12px rgba(0,0,0,0.5)' }}>
+              <Circle size={18} />
+            </button>
+          </div>
+          <div style={{ position: 'absolute', left: -20, top: -90, pointerEvents: 'auto' }}>
+            <button 
+              onClick={() => { useGraphStore.getState().updateNodeShape(contextMenuNodeId, 'square'); setContextMenuNodeId(null); setTimeout(syncGraph, 100); }}
+              style={{ background: '#3f3f46', border: 'none', borderRadius: '50%', width: '40px', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', cursor: 'pointer', boxShadow: '0 4px 12px rgba(0,0,0,0.5)' }}>
+              <Square size={18} />
+            </button>
+          </div>
+          <div style={{ position: 'absolute', left: 30, top: -70, pointerEvents: 'auto' }}>
+            <button 
+              onClick={() => { useGraphStore.getState().updateNodeShape(contextMenuNodeId, 'hexagon'); setContextMenuNodeId(null); setTimeout(syncGraph, 100); }}
+              style={{ background: '#3f3f46', border: 'none', borderRadius: '50%', width: '40px', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', cursor: 'pointer', boxShadow: '0 4px 12px rgba(0,0,0,0.5)' }}>
+              <Hexagon size={18} />
+            </button>
+          </div>
+
+          <div style={{ position: 'absolute', left: -70, top: 30, pointerEvents: 'auto' }}>
+            <button 
+              onClick={() => { useGraphStore.getState().updateNodeStyle(contextMenuNodeId, '#' + Math.floor(Math.random()*16777215).toString(16)); setContextMenuNodeId(null); setTimeout(syncGraph, 100); }}
+              style={{ background: '#3b82f6', border: 'none', borderRadius: '50%', width: '40px', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', cursor: 'pointer', boxShadow: '0 4px 12px rgba(0,0,0,0.5)' }}>
+              <Palette size={18} />
+            </button>
+          </div>
+          <div style={{ position: 'absolute', left: 30, top: 30, pointerEvents: 'auto' }}>
+            <button 
+              onClick={() => { useGraphStore.getState().deleteNode(contextMenuNodeId); setContextMenuNodeId(null); setTimeout(syncGraph, 100); }}
+              style={{ background: '#ef4444', border: 'none', borderRadius: '50%', width: '40px', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', cursor: 'pointer', boxShadow: '0 4px 12px rgba(0,0,0,0.5)' }}>
+              <Trash2 size={18} />
+            </button>
+          </div>
+        </div>
+      )}
+    </>
   );
 };

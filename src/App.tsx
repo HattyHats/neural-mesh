@@ -815,6 +815,14 @@ export default function App() {
 
         <div className="sidebar-section-title">Tools</div>
         
+        <button className="btn-pill" onClick={() => {
+           useGraphStore.getState().tidyGraph();
+           setTimeout(() => window.dispatchEvent(new CustomEvent('recenter')), 100);
+        }}>
+          <Network size={18} />
+          Tidy Mesh
+        </button>
+        
         <button className="btn-pill" onClick={() => fileInputRef.current?.click()}>
           <ImageIcon size={18} />
           Upload Image
@@ -1040,11 +1048,12 @@ export default function App() {
                 onChange={e => setSearchQuery(e.target.value)}
                 onKeyDown={e => {
                   if (e.key === 'Escape') setShowSearch(false);
-                  const results = useGraphStore.getState().nodes.filter(n => n.text.toLowerCase().includes(searchQuery.toLowerCase()));
+                  const results = useGraphStore.getState().nodes.filter(n => (n.text && n.text.toLowerCase().includes(searchQuery.toLowerCase())) || (n.details && n.details.toLowerCase().includes(searchQuery.toLowerCase())));
                   if (e.key === 'ArrowDown') setSearchIndex(i => Math.min(i + 1, results.length - 1));
                   if (e.key === 'ArrowUp') setSearchIndex(i => Math.max(i - 1, 0));
                   if (e.key === 'Enter' && results[searchIndex]) {
                     useGraphStore.getState().setFocusNode(results[searchIndex].id);
+                    useGraphStore.getState().setSelectedNodeId(results[searchIndex].id);
                     setShowSearch(false);
                   }
                 }}
@@ -1053,12 +1062,13 @@ export default function App() {
               />
             </div>
             <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
-              {useGraphStore.getState().nodes.filter(n => n.text.toLowerCase().includes(searchQuery.toLowerCase())).map((node, i) => (
+              {useGraphStore.getState().nodes.filter(n => (n.text && n.text.toLowerCase().includes(searchQuery.toLowerCase())) || (n.details && n.details.toLowerCase().includes(searchQuery.toLowerCase()))).map((node, i) => (
                 <div 
                   key={node.id}
                   onMouseEnter={() => setSearchIndex(i)}
                   onClick={() => {
                     useGraphStore.getState().setFocusNode(node.id);
+                    useGraphStore.getState().setSelectedNodeId(node.id);
                     setShowSearch(false);
                   }}
                   style={{

@@ -7,7 +7,7 @@ import remarkGfm from 'remark-gfm';
 import { brainstormConcept, findGhostLinks, devilsAdvocate } from '../lib/ai';
 
 export function MarkdownEditor() {
-  const { selectedNodeId, setSelectedNodeId, updateNodeDetails, updateNodeStyle, updateNodeShape, toggleSticky, setCurrentParentId, toggleGravityWell, pathway, setPathway, activeFocusId, setActiveFocusId } = useGraphStore();
+  const { selectedNodeId, setSelectedNodeId, updateNodeDetails, updateNodeStyle, updateNodeShape, toggleSticky, setCurrentParentId, toggleGravityWell, pathway, setPathway, activeFocusId, setActiveFocusId, updateNodeText, updateNodeRadius } = useGraphStore();
   
   const [text, setText] = useState('');
   const [isImage, setIsImage] = useState(false);
@@ -17,6 +17,7 @@ export function MarkdownEditor() {
   const [isGravityWell, setIsGravityWell] = useState(false);
   const [youtubeId, setYoutubeId] = useState<string | null>(null);
   const [nodeTitle, setNodeTitle] = useState('');
+  const [nodeRadius, setNodeRadius] = useState(25);
   const [isPreview, setIsPreview] = useState(false);
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [aiProgress, setAiProgress] = useState('');
@@ -151,6 +152,7 @@ export function MarkdownEditor() {
         setNodeShape(n.shape || 'circle');
         setIsSticky(!!n.isSticky);
         setIsGravityWell(!!n.isGravityWell);
+        setNodeRadius(n.radius || (n.isDateNode ? 30 : (n.isCategory ? 35 : 25)));
         setNodeTitle(n.text || (n.imageUrl?.includes('youtube.com') ? 'YouTube Video' : 'Image Bubble'));
         
         if (n.imageUrl) {
@@ -217,7 +219,17 @@ export function MarkdownEditor() {
       color: '#fff', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)'
     }}>
       <div style={{ padding: '20px', borderBottom: '1px solid #3f3f46', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 600, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{nodeTitle}</h3>
+        <input 
+          value={nodeTitle}
+          onChange={(e) => {
+            setNodeTitle(e.target.value);
+            if (selectedNodeId) {
+              updateNodeText(selectedNodeId, e.target.value);
+              setTimeout(syncGraph, 100);
+            }
+          }}
+          style={{ margin: 0, fontSize: '18px', fontWeight: 600, flex: 1, background: 'transparent', border: 'none', color: '#fff', outline: 'none' }}
+        />
         <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
           <button onClick={() => setIsPreview(!isPreview)} style={{ display: 'flex', alignItems: 'center', gap: '5px', background: 'transparent', border: 'none', color: '#a1a1aa', cursor: 'pointer', fontSize: '14px' }}>
             {isPreview ? <><Edit3 size={16} /> Edit</> : <><Eye size={16} /> Preview</>}
@@ -278,7 +290,26 @@ export function MarkdownEditor() {
         )}
       </div>
 
-      <div style={{ padding: '10px 20px', borderBottom: '1px solid #3f3f46', display: 'flex', alignItems: 'center', gap: '10px', background: 'rgba(0,0,0,0.2)' }}>
+      <div style={{ padding: '12px 20px', borderBottom: '1px solid #3f3f46', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', background: 'rgba(0,0,0,0.2)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span style={{ fontSize: '12px', color: '#a1a1aa' }}>Size</span>
+          <input 
+            type="range" 
+            min="10" 
+            max="250" 
+            value={nodeRadius}
+            onChange={(e) => {
+              const val = parseInt(e.target.value);
+              setNodeRadius(val);
+              if (selectedNodeId) {
+                updateNodeRadius(selectedNodeId, val);
+                setTimeout(syncGraph, 100);
+              }
+            }}
+            style={{ width: '60px' }}
+          />
+        </div>
+
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <span style={{ fontSize: '12px', color: '#a1a1aa' }}>Shape</span>
           <select 
@@ -332,13 +363,13 @@ export function MarkdownEditor() {
               }
             }
           }}
-          style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '4px', background: pathway.includes(selectedNodeId || '') ? '#0ea5e9' : 'transparent', color: pathway.includes(selectedNodeId || '') ? '#fff' : '#a1a1aa', border: '1px solid #3f3f46', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}
+          style={{ display: 'flex', alignItems: 'center', gap: '4px', background: pathway.includes(selectedNodeId || '') ? '#0ea5e9' : 'transparent', color: pathway.includes(selectedNodeId || '') ? '#fff' : '#a1a1aa', border: '1px solid #3f3f46', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}
         >
           <Target size={12} /> {pathway.includes(selectedNodeId || '') ? 'In Pathway' : '+ Pathway'}
         </button>
       </div>
 
-      <div style={{ flex: 1, padding: '20px', overflowY: 'auto' }}>
+      <div style={{ flex: 1, padding: '20px', overflowY: 'hidden', display: 'flex', flexDirection: 'column' }}>
         {showAiWarning && (
           <div style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.2)', color: '#fca5a5', padding: '12px', borderRadius: '8px', marginBottom: '15px', fontSize: '14px' }}>
             <strong>Local AI Not Ready.</strong> The system is still loading the Web-LLM model. This can take several minutes the first time as it downloads the neural network weights to your browser cache.
@@ -365,7 +396,7 @@ export function MarkdownEditor() {
         )}
 
         {isPreview ? (
-          <div className="prose prose-invert max-w-none" style={{ color: '#e4e4e7', lineHeight: '1.7' }}>
+          <div className="prose prose-invert max-w-none" style={{ color: '#e4e4e7', lineHeight: '1.7', flex: 1, overflowY: 'auto', paddingBottom: '20px' }}>
             {text ? <ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown> : <span style={{color: '#71717a', fontStyle: 'italic'}}>No content...</span>}
           </div>
         ) : (
@@ -377,7 +408,7 @@ export function MarkdownEditor() {
             }}
             placeholder="Type your markdown thoughts here... You can also drag & drop images!"
             style={{
-              width: '100%', height: '100%', minHeight: '300px', background: 'transparent', color: '#e4e4e7',
+              flex: 1, width: '100%', background: 'transparent', color: '#e4e4e7', overflowY: 'auto', paddingBottom: '20px',
               border: 'none', resize: 'none', outline: 'none', fontSize: '15px', lineHeight: '1.7', fontFamily: 'monospace'
             }}
           />
