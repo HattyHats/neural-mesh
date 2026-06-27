@@ -53,6 +53,13 @@ export default function App() {
   const [quickCaptureText, setQuickCaptureText] = useState('');
   const [isAiThinking, setIsAiThinking] = useState(false);
   const [aiMessage, setAiMessage] = useState('');
+  const [showConstellationPrompt, setShowConstellationPrompt] = useState(false);
+  const [constellationNameInput, setConstellationNameInput] = useState('');
+  
+  const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
+  const toggleSection = (section: string) => {
+     setCollapsedSections(prev => ({ ...prev, [section]: !prev[section] }));
+  };
 
   const { setTheme } = useGraphStore();
 
@@ -94,6 +101,7 @@ export default function App() {
           });
           
           setGraph(loadedNodes, data.edges || [], data.vaultSalt || null);
+          useGraphStore.setState({ constellations: data.constellations || [] });
           setTimeout(() => window.dispatchEvent(new CustomEvent('recenter')), 100);
           if (burn) {
             window.history.replaceState(null, '', window.location.pathname);
@@ -130,6 +138,7 @@ export default function App() {
     const saveState = {
       nodes: useGraphStore.getState().nodes,
       edges: useGraphStore.getState().edges,
+      constellations: useGraphStore.getState().constellations,
       vaultSalt: useGraphStore.getState().vaultSalt,
       timestamp: Date.now()
     };
@@ -764,170 +773,234 @@ export default function App() {
           </div>
         )}
 
-        <div className="sidebar-section-title">Application</div>
-        
-        <button className="btn-pill" onClick={() => setIsIncognito(!isIncognito)}>
-          <ShieldAlert size={18} />
-          {isIncognito ? 'Incognito: ON' : 'Incognito: OFF'}
-        </button>
-
-        <button className="btn-pill" onClick={() => setShowSettings(true)}>
-          <SettingsIcon size={18} />
-          Settings
-        </button>
-
-        <button className="btn-pill" onClick={() => setShowInsights(true)}>
-          <Activity size={18} />
-          Insights
-        </button>
-
-        {!((window as unknown as { electronBridge?: any; handleOpenMeshFile?: any }).electronBridge) && (
-          <>
-            <div className="sidebar-section-title">Security</div>
-            
-            <button className="btn-pill danger" onClick={panicBurn}>
-              <Skull size={18} />
-              Panic Burn
-            </button>
-
-            <button className="btn-pill warning" onClick={copyBurnLink}>
-              <Flame size={18} />
-              Burn Link
-            </button>
-            
-            <button className={`btn-pill ${cryptoSalt ? 'primary' : ''}`} onClick={lockBrain}>
-              <Lock size={18} />
-              {cryptoSalt ? 'Brain Locked' : 'Lock Brain'}
-            </button>
-          </>
-        )}
-
-        {!!(window as unknown as { electronBridge?: any; handleOpenMeshFile?: any }).electronBridge && (
-          <>
-            <div className="sidebar-section-title">Security</div>
-            
-            <button className="btn-pill danger" onClick={panicBurn}>
-              <Skull size={18} />
-              Panic Burn
-            </button>
-          </>
-        )}
-
-        <div className="sidebar-section-title">Tools</div>
-        
-        <button className="btn-pill" onClick={() => {
-           useGraphStore.getState().tidyGraph();
-           setTimeout(() => window.dispatchEvent(new CustomEvent('recenter')), 100);
-        }}>
-          <Network size={18} />
-          Tidy Mesh
-        </button>
-        
-        <button className="btn-pill" onClick={() => fileInputRef.current?.click()}>
-          <ImageIcon size={18} />
-          Upload Image
-        </button>
-
-        <button className="btn-pill" onClick={() => setIsCalendarOpen(true)}>
-          <CalendarIcon size={18} />
-          Timeline
-        </button>
-
-        <button className="btn-pill" onClick={() => setShowSearch(true)}>
-          <Search size={18} />
-          Search
-        </button>
-
-
-
-        <div className="sidebar-section-title">Network & IO</div>
-
-
-        
-        <button className="btn-pill" onClick={exportStego}>
-          <ImageIcon size={18} />
-          Stego Export
-        </button>
-
-        <button className="btn-pill" onClick={exportMarkdown}>
-          <Download size={18} />
-          Export MD
-        </button>
-
-        <button className="btn-pill" onClick={async () => {
-          const state = useGraphStore.getState();
-          const zip = new JSZip();
-          state.nodes.forEach(node => {
-            let content = node.details || "";
-            const connections = state.edges
-              .filter(e => e.source === node.id || e.target === node.id)
-              .map(e => {
-                const linkedNodeId = e.source === node.id ? e.target : e.source;
-                return state.nodes.find(n => n.id === linkedNodeId)?.text;
-              })
-              .filter(Boolean);
-            if (connections.length > 0) {
-              content += "\n\n---\n### Links\n" + connections.map(c => `[[${c}]]`).join('\n');
-            }
-            zip.file(`${node.text.replace(/[/\\?%*:|"<>]/g, '-')}.md`, content);
-          });
-          const blob = await zip.generateAsync({ type: 'blob' });
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = 'NeuralMesh-Obsidian-Vault.zip';
-          a.click();
-          URL.revokeObjectURL(url);
-        }}>
-          <Download size={18} />
-          Obsidian Vault
-        </button>
-
-        {!!(window as unknown as { electronBridge?: any; handleOpenMeshFile?: any }).electronBridge && (
-          <>
-            <button 
-              className="btn-pill success"
-              onClick={async () => {
-                const state = useGraphStore.getState();
-                const data = JSON.stringify({ nodes: state.nodes, edges: state.edges, vaultSalt: state.vaultSalt });
-                await (window as unknown as { electronBridge?: any; handleOpenMeshFile?: any }).electronBridge.saveMeshFile(data);
-              }}
-            >
-              <Save size={18} />
-              Save .mesh
-            </button>
-            <button 
-              className="btn-pill success"
-              onClick={async () => {
-                const data = await (window as unknown as { electronBridge?: any; handleOpenMeshFile?: any }).electronBridge.openMeshFile();
-                if (data) {
-                  const payload = JSON.parse(data);
-                  useGraphStore.getState().setGraph(payload.nodes, payload.edges, payload.vaultSalt);
-                  setTimeout(() => window.dispatchEvent(new CustomEvent('recenter')), 100);
-                }
-              }}
-            >
-              <Download size={18} />
-              Load .mesh
-            </button>
-          </>
-        )}
-
-        <div className="sidebar-section-title">Misc</div>
-
-        <button className="btn-pill" onClick={() => setShowInfo(true)}>
-          <Info size={18} />
-          Info
-        </button>
-
-        <div style={{ display: 'flex', gap: '8px', marginTop: '5px' }}>
-          <button className="btn-pill" onClick={() => useGraphStore.getState().undo()} title="Undo (Cmd+Z)">
-            <Undo size={18} />
-          </button>
-          <button className="btn-pill" onClick={() => useGraphStore.getState().redo()} title="Redo (Cmd+Shift+Z)">
-            <Redo size={18} />
-          </button>
+        <div className="sidebar-section-title" onClick={() => toggleSection('application')} style={{ cursor: 'pointer', display: 'flex', justifyContent: 'space-between' }}>
+           Application <span>{collapsedSections['application'] ? '+' : '-'}</span>
         </div>
+        {!collapsedSections['application'] && (
+          <>
+            <button className="btn-pill" onClick={() => setShowQuickCapture(true)}>
+              <BrainCircuit size={18} color="#3b82f6" />
+              Brain Dump Inbox
+            </button>
+
+            <button className="btn-pill" onClick={() => {
+              const selected = useGraphStore.getState().selectedNodeIds;
+              if (selected.length > 0) {
+                 setShowConstellationPrompt(true);
+                 setConstellationNameInput('');
+              } else {
+                alert("Please lasso-select (Shift+Drag) multiple nodes first to save a Constellation.");
+              }
+            }}>
+              <Network size={18} color="#10b981" />
+              Save Constellation
+            </button>
+
+            {useGraphStore.getState().constellations.length > 0 && (
+              <div style={{ padding: '10px', background: 'rgba(255,255,255,0.05)', borderRadius: '8px', display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                <div style={{ fontSize: '12px', color: '#a1a1aa' }}>Spawn Constellation:</div>
+                <select
+                  className="btn-pill"
+                  style={{ width: '100%', outline: 'none' }}
+                  value=""
+                  onChange={(e) => {
+                    if (!e.target.value) return;
+                    const cId = e.target.value;
+                    const t = useGraphStore.getState().peerCursor || { x: 0, y: 0 };
+                    useGraphStore.getState().saveHistory();
+                    useGraphStore.getState().spawnConstellation(cId, t.x || 0, t.y || 0);
+                  }}
+                >
+                  <option value="" disabled>Select...</option>
+                  {useGraphStore.getState().constellations.map(c => (
+                    <option key={c.id} value={c.id} style={{ background: '#18181b', color: '#fff' }}>{c.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            <button className="btn-pill" onClick={() => setShowSettings(true)}>
+              <SettingsIcon size={18} />
+              Settings
+            </button>
+
+            <button className="btn-pill" onClick={() => setShowInsights(true)}>
+              <Activity size={18} />
+              Insights
+            </button>
+          </>
+        )}
+
+        <div className="sidebar-section-title" onClick={() => toggleSection('security')} style={{ cursor: 'pointer', display: 'flex', justifyContent: 'space-between' }}>
+          Security <span>{collapsedSections['security'] ? '+' : '-'}</span>
+        </div>
+        
+        {!collapsedSections['security'] && (
+          <>
+            <button className="btn-pill" onClick={() => setIsIncognito(!isIncognito)}>
+              <ShieldAlert size={18} />
+              {isIncognito ? 'Incognito: ON' : 'Incognito: OFF'}
+            </button>
+
+            {!((window as unknown as { electronBridge?: any; handleOpenMeshFile?: any }).electronBridge) && (
+              <>
+                <button className="btn-pill danger" onClick={panicBurn}>
+                  <Skull size={18} />
+                  Panic Burn
+                </button>
+
+                <button className="btn-pill warning" onClick={copyBurnLink}>
+                  <Flame size={18} />
+                  Burn Link
+                </button>
+                
+                <button className={`btn-pill ${cryptoSalt ? 'primary' : ''}`} onClick={lockBrain}>
+                  <Lock size={18} />
+                  {cryptoSalt ? 'Brain Locked' : 'Lock Brain'}
+                </button>
+              </>
+            )}
+
+            {!!(window as unknown as { electronBridge?: any; handleOpenMeshFile?: any }).electronBridge && (
+              <button className="btn-pill danger" onClick={panicBurn}>
+                <Skull size={18} />
+                Panic Burn
+              </button>
+            )}
+          </>
+        )}
+
+        <div className="sidebar-section-title" onClick={() => toggleSection('tools')} style={{ cursor: 'pointer', display: 'flex', justifyContent: 'space-between' }}>
+          Tools <span>{collapsedSections['tools'] ? '+' : '-'}</span>
+        </div>
+        
+        {!collapsedSections['tools'] && (
+          <>
+            <button className="btn-pill" onClick={() => {
+               useGraphStore.getState().tidyGraph();
+               setTimeout(() => window.dispatchEvent(new CustomEvent('recenter')), 100);
+            }}>
+              <Network size={18} />
+              Tidy Mesh
+            </button>
+            
+            <button className="btn-pill" onClick={() => fileInputRef.current?.click()}>
+              <ImageIcon size={18} />
+              Upload Image
+            </button>
+
+            <button className="btn-pill" onClick={() => setIsCalendarOpen(true)}>
+              <CalendarIcon size={18} />
+              Timeline
+            </button>
+
+            <button className="btn-pill" onClick={() => setShowSearch(true)}>
+              <Search size={18} />
+              Search
+            </button>
+          </>
+        )}
+
+
+
+        <div className="sidebar-section-title" onClick={() => toggleSection('network')} style={{ cursor: 'pointer', display: 'flex', justifyContent: 'space-between' }}>
+          Network & IO <span>{collapsedSections['network'] ? '+' : '-'}</span>
+        </div>
+
+        {!collapsedSections['network'] && (
+          <>
+            <button className="btn-pill" onClick={exportStego}>
+              <ImageIcon size={18} />
+              Stego Export
+            </button>
+
+            <button className="btn-pill" onClick={exportMarkdown}>
+              <Download size={18} />
+              Export MD
+            </button>
+
+            <button className="btn-pill" onClick={async () => {
+              const state = useGraphStore.getState();
+              const zip = new JSZip();
+              state.nodes.forEach(node => {
+                let content = node.details || "";
+                const connections = state.edges
+                  .filter(e => e.source === node.id || e.target === node.id)
+                  .map(e => {
+                    const linkedNodeId = e.source === node.id ? e.target : e.source;
+                    return state.nodes.find(n => n.id === linkedNodeId)?.text;
+                  })
+                  .filter(Boolean);
+                if (connections.length > 0) {
+                  content += "\n\n---\n### Links\n" + connections.map(c => `[[${c}]]`).join('\n');
+                }
+                zip.file(`${node.text.replace(/[/\\?%*:|"<>]/g, '-')}.md`, content);
+              });
+              const blob = await zip.generateAsync({ type: 'blob' });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = 'NeuralMesh-Obsidian-Vault.zip';
+              a.click();
+              URL.revokeObjectURL(url);
+            }}>
+              <Download size={18} />
+              Obsidian Vault
+            </button>
+
+            {!!(window as unknown as { electronBridge?: any; handleOpenMeshFile?: any }).electronBridge && (
+              <>
+                <button 
+                  className="btn-pill success"
+                  onClick={async () => {
+                    const state = useGraphStore.getState();
+                    const data = JSON.stringify({ nodes: state.nodes, edges: state.edges, vaultSalt: state.vaultSalt });
+                    await (window as unknown as { electronBridge?: any; handleOpenMeshFile?: any }).electronBridge.saveMeshFile(data);
+                  }}
+                >
+                  <Save size={18} />
+                  Save .mesh
+                </button>
+                <button 
+                  className="btn-pill success"
+                  onClick={async () => {
+                    const data = await (window as unknown as { electronBridge?: any; handleOpenMeshFile?: any }).electronBridge.openMeshFile();
+                    if (data) {
+                      const payload = JSON.parse(data);
+                      useGraphStore.getState().setGraph(payload.nodes, payload.edges, payload.vaultSalt);
+                      setTimeout(() => window.dispatchEvent(new CustomEvent('recenter')), 100);
+                    }
+                  }}
+                >
+                  <Download size={18} />
+                  Load .mesh
+                </button>
+              </>
+            )}
+          </>
+        )}
+
+        <div className="sidebar-section-title" onClick={() => toggleSection('misc')} style={{ cursor: 'pointer', display: 'flex', justifyContent: 'space-between' }}>
+          Misc <span>{collapsedSections['misc'] ? '+' : '-'}</span>
+        </div>
+
+        {!collapsedSections['misc'] && (
+          <>
+            <button className="btn-pill" onClick={() => setShowInfo(true)}>
+              <Info size={18} />
+              Info
+            </button>
+
+            <div style={{ display: 'flex', gap: '8px', marginTop: '5px' }}>
+              <button className="btn-pill" onClick={() => useGraphStore.getState().undo()} title="Undo (Cmd+Z)">
+                <Undo size={18} />
+              </button>
+              <button className="btn-pill" onClick={() => useGraphStore.getState().redo()} title="Redo (Cmd+Shift+Z)">
+                <Redo size={18} />
+              </button>
+            </div>
+          </>
+        )}
       </div>
 
       {showInfo && (
@@ -944,8 +1017,10 @@ export default function App() {
             
             <h3 style={{ color: '#fff', borderBottom: '1px solid #3f3f46', paddingBottom: '10px' }}>General Features</h3>
             <ul style={{ lineHeight: '1.6', marginBottom: '25px' }}>
+              <li><strong>Drag & Drop Media:</strong> Drag any image file directly from your computer onto the canvas to instantly spawn it as a media node!</li>
+              <li><strong>Constellations (Templates):</strong> Lasso-select a group of thoughts, click "Save Constellation" in the sidebar, and save them as a reusable template. Spawn them anytime from the dropdown menu!</li>
               <li><strong>Lasso Selection:</strong> Hold <strong>Shift</strong> and drag over the canvas to draw a selection box. All selected thoughts can be dragged simultaneously.</li>
-              <li><strong>List View:</strong> Click the "List View" icon in the bottom right corner to pop out a clean, readable text view of all your thoughts grouped by date. You can even edit thoughts directly from here!</li>
+              <li><strong>List View & Minimap:</strong> Use the Minimap in the bottom right to navigate huge graphs. Click the "List View" icon to pop out a clean, readable text view of all your thoughts grouped by date.</li>
               <li><strong>Live AI Clustering:</strong> Type <code>/cluster</code> to let the local AI read all your thoughts, group them into semantic categories, and physically organize them into bounding boxes.</li>
               <li><strong>Deep Thoughts:</strong> Select a thought and press the 'Edit' button in the bottom right to open the Markdown editor. You can drag and drop images directly into the text!</li>
               <li><strong>Node Merging:</strong> Drag and hold one thought over another to fuse them together.</li>
@@ -956,6 +1031,8 @@ export default function App() {
             <h3 style={{ color: '#fff', borderBottom: '1px solid #3f3f46', paddingBottom: '10px' }}>Controls & Commands</h3>
             <ul style={{ lineHeight: '1.6' }}>
               <li><strong>Thought Creation:</strong> Double-Click anywhere to create a thought. Double-Click a thought to edit its title.</li>
+              <li><strong>Grid Snapping:</strong> Hold <strong>Alt</strong> while dragging a thought to snap it perfectly to a 50px grid.</li>
+              <li><strong>Branch Collapse:</strong> Right-Click on any Date node or Category node to instantly collapse or expand its entire branch of connected thoughts.</li>
               <li><strong>Manual Connections:</strong> Hold <strong>Shift</strong> and drag from one thought to another to connect them. Directed arrows will appear pointing to the target.</li>
               <li><strong>Bounding Boxes:</strong> Type <code>/box [Name]</code> to spawn a spatial glassmorphic group container. Dragging the box drags all contained thoughts!</li>
               <li><strong>Live Web Embeds:</strong> Type <code>/embed [URL]</code> (like a YouTube video link) to spawn a fully interactive, synced HTML iframe on the mesh!</li>
@@ -1119,7 +1196,7 @@ export default function App() {
                      parentId: useGraphStore.getState().currentParentId || undefined
                   });
                   setQuickCaptureText('');
-                  setShowQuickCapture(false);
+                  // Keep window open for rapid brainstorming!
                   setTimeout(syncGraph, 100);
                 }
               }}
@@ -1313,6 +1390,44 @@ export default function App() {
               fontSize: '16px',
             }}
           />
+        </div>
+      )}
+
+      {showConstellationPrompt && (
+        <div className="modal-overlay">
+          <div className="modal-content" style={{ maxWidth: '400px' }}>
+            <h3 style={{ marginTop: 0 }}>Save Constellation</h3>
+            <p style={{ color: '#a1a1aa', fontSize: '14px', marginBottom: '15px' }}>
+              Name your new constellation (template) to save the selected thoughts.
+            </p>
+            <input
+              type="text"
+              className="floating-input"
+              style={{ position: 'relative', left: 0, top: 0, transform: 'none', width: '100%', marginBottom: '15px' }}
+              placeholder="e.g. Project Workflow"
+              value={constellationNameInput}
+              onChange={(e) => setConstellationNameInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && constellationNameInput.trim()) {
+                  useGraphStore.getState().saveConstellation(constellationNameInput.trim(), useGraphStore.getState().selectedNodeIds);
+                  setShowConstellationPrompt(false);
+                }
+                if (e.key === 'Escape') {
+                  setShowConstellationPrompt(false);
+                }
+              }}
+              autoFocus
+            />
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+              <button className="btn-pill" onClick={() => setShowConstellationPrompt(false)}>Cancel</button>
+              <button className="btn-pill primary" onClick={() => {
+                if (constellationNameInput.trim()) {
+                  useGraphStore.getState().saveConstellation(constellationNameInput.trim(), useGraphStore.getState().selectedNodeIds);
+                  setShowConstellationPrompt(false);
+                }
+              }}>Save</button>
+            </div>
+          </div>
         </div>
       )}
 

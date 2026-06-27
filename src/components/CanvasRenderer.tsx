@@ -69,6 +69,8 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ onDoubleClick })
   const [contextMenuPos, setContextMenuPos] = useState({ x: 0, y: 0 });
   
   const transformRef = useRef({ x: window.innerWidth / 2, y: window.innerHeight / 2, scale: 1 });
+  
+
   const isDraggingCanvasRef = useRef(false);
   const nodeDraggingRef = useRef<string | null>(null);
   const nodeResizingRef = useRef<string | null>(null);
@@ -115,12 +117,11 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ onDoubleClick })
       
       const cx = (minX + maxX) / 2;
       const cy = (minY + maxY) / 2;
-      
-      transformRef.current = { 
-        x: window.innerWidth / 2 - cx, 
-        y: window.innerHeight / 2 - cy, 
-        scale: 1 
-      };
+            transformRef.current = { 
+          x: window.innerWidth / 2 - cx, 
+          y: window.innerHeight / 2 - cy, 
+          scale: 1 
+        };
     };
 
     window.addEventListener('zoomIn', handleZoomIn);
@@ -142,6 +143,18 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ onDoubleClick })
 
     let animationId: number;
     let lastTime = performance.now();
+
+    const keysPressed: { [key: string]: boolean } = {};
+    const onKeyDown = (e: KeyboardEvent) => {
+      const tag = document.activeElement?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+      keysPressed[e.key.toLowerCase()] = true;
+    };
+    const onKeyUp = (e: KeyboardEvent) => {
+      keysPressed[e.key.toLowerCase()] = false;
+    };
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
 
     const render = (time: number) => {
       const dt = Math.min((time - lastTime) / 1000, 0.1);
@@ -166,15 +179,40 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ onDoubleClick })
         } else {
           useGraphStore.getState().setFocusNode(null);
         }
+      } else {
+        // Manual WASD camera movement
+        const t = transformRef.current;
+        const speed = 800 * dt; 
+        if (keysPressed['w']) t.y += speed;
+        if (keysPressed['s']) t.y -= speed;
+        if (keysPressed['a']) t.x += speed;
+        if (keysPressed['d']) t.x -= speed;
       }
 
       const collapsedParents = nodes.filter(n => n.collapsed);
       const hiddenNodeIds = new Set<string>();
+      
+      // Build adjacency list for faster traversal
+      const adj = new Map<string, string[]>();
+      edges.forEach(e => {
+        if (!adj.has(e.source)) adj.set(e.source, []);
+        if (!adj.has(e.target)) adj.set(e.target, []);
+        adj.get(e.source)!.push(e.target);
+        adj.get(e.target)!.push(e.source);
+      });
+
       collapsedParents.forEach(p => {
-        edges.forEach(e => {
-          if (e.source === p.id) hiddenNodeIds.add(e.target);
-          if (e.target === p.id) hiddenNodeIds.add(e.source);
-        });
+        const queue = [p.id];
+        while (queue.length > 0) {
+          const current = queue.shift()!;
+          const neighbors = adj.get(current) || [];
+          for (const neighbor of neighbors) {
+            if (!hiddenNodeIds.has(neighbor) && neighbor !== p.id) {
+              hiddenNodeIds.add(neighbor);
+              queue.push(neighbor);
+            }
+          }
+        }
       });
 
       let visibleNodes = nodes;
@@ -194,10 +232,10 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ onDoubleClick })
           if (visibleNodeIds.has(e.target)) visibleNodeIds.add(e.source);
         });
         
-        visibleNodes = visibleNodes.filter(n => visibleNodeIds.has(n.id) && (!hiddenNodeIds.has(n.id) || n.isDateNode || n.isCategory || n.collapsed));
+        visibleNodes = visibleNodes.filter(n => visibleNodeIds.has(n.id) && !hiddenNodeIds.has(n.id));
         visibleEdges = visibleEdges.filter(e => visibleNodeIds.has(e.source) && visibleNodeIds.has(e.target));
       } else {
-        visibleNodes = visibleNodes.filter(n => !hiddenNodeIds.has(n.id) || n.isDateNode || n.isCategory || n.collapsed);
+        visibleNodes = visibleNodes.filter(n => !hiddenNodeIds.has(n.id));
       }
       
       let newNodes = visibleNodes;
@@ -222,6 +260,8 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ onDoubleClick })
         
         useGraphStore.getState().updatePhysics(updatedAllNodes, edges);
       }
+
+      let renderNodes = newNodes;
 
       const width = window.innerWidth;
       const height = window.innerHeight;
@@ -263,7 +303,7 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ onDoubleClick })
       ctx.scale(t.scale, t.scale);
 
       // Draw Groups
-      newNodes.filter(n => n.isGroup).forEach(group => {
+      renderNodes.filter(n => n.isGroup).forEach(group => {
          const w = group.width || 400;
          const h = group.height || 400;
          const isSelected = useGraphStore.getState().selectedNodeIds.includes(group.id) || nodeDraggingRef.current === group.id;
@@ -321,9 +361,10 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ onDoubleClick })
         }
       }
 
+      // Draw Edges
       visibleEdges.forEach(edge => {
-        const source = newNodes.find(n => n.id === edge.source);
-        const target = newNodes.find(n => n.id === edge.target);
+        const source = renderNodes.find(n => n.id === edge.source);
+        const target = renderNodes.find(n => n.id === edge.target);
         if (source && target) {
           const timeFilter = useGraphStore.getState().timeFilter;
           if (timeFilter !== null) {
@@ -352,9 +393,11 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ onDoubleClick })
           const arrowTipX = target.x - Math.cos(angle) * (targetRadius + 6);
           const arrowTipY = target.y - Math.sin(angle) * (targetRadius + 6);
           
-          if (focusNodeId) {
-             ctx.globalAlpha = (!focusSet.has(edge.source) || !focusSet.has(edge.target)) ? 0.05 : 1.0;
+          let edgeOpacity = Math.min((source as any).opacity ?? 1, (target as any).opacity ?? 1);
+          if (focusNodeId && (!focusSet.has(edge.source) || !focusSet.has(edge.target))) {
+             edgeOpacity = 0.05;
           }
+          ctx.globalAlpha = edgeOpacity;
 
           ctx.beginPath();
           ctx.moveTo(source.x, source.y);
@@ -444,7 +487,7 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ onDoubleClick })
       ctx.globalAlpha = 1.0;
 
       if (edgeSourceRef.current) {
-        const source = newNodes.find(n => n.id === edgeSourceRef.current);
+        const source = renderNodes.find(n => n.id === edgeSourceRef.current);
         if (source) {
           ctx.strokeStyle = 'rgba(0, 170, 255, 0.8)';
           ctx.beginPath();
@@ -454,7 +497,7 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ onDoubleClick })
         }
       }
 
-      newNodes.forEach(node => {
+      renderNodes.forEach(node => {
         if (node.isGroup) return;
 
         const timeFilter = useGraphStore.getState().timeFilter;
@@ -463,15 +506,14 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ onDoubleClick })
         const isPeerLocked = useGraphStore.getState().peerLockedNodeId === node.id;
         
         // Heatmap Logic
-        let opacity = 1.0;
+        let opacity = (node as any).opacity ?? 1.0;
         if (node.lastInteraction) {
            const daysOld = (Date.now() - node.lastInteraction) / (1000 * 60 * 60 * 24);
-           opacity = Math.max(0.4, 1.0 - (daysOld * 0.1)); // Fades completely over 6 days
+           opacity = Math.max(0.4, opacity - (daysOld * 0.1)); // Fades completely over 6 days
         }
         if (focusNodeId && !focusSet.has(node.id)) {
            opacity = 0.1;
         }
-        ctx.globalAlpha = opacity;
         ctx.globalAlpha = opacity;
 
         const baseSize = node.radius || (node.isDateNode ? 30 : (node.isCategory ? 35 : 25));
@@ -751,7 +793,8 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ onDoubleClick })
       const { clientX, clientY } = e;
       const pos = getCanvasPos(clientX, clientY);
       const state = useGraphStore.getState();
-      const clickedNode = state.nodes.find(n => {
+      const clickedNode = state.nodes.slice().reverse().find(n => {
+         if (state.selectedDate && n.date !== state.selectedDate) return false;
          const dx = n.x - pos.x;
          const dy = n.y - pos.y;
          const r = n.radius || (n.isDateNode ? 30 : 25);
@@ -770,7 +813,8 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ onDoubleClick })
       e.preventDefault();
       const pos = getCanvasPos(e.clientX, e.clientY);
       const state = useGraphStore.getState();
-      const clicked = state.nodes.find(n => {
+      const clicked = state.nodes.slice().reverse().find(n => {
+         if (state.selectedDate && n.date !== state.selectedDate) return false;
          const dx = n.x - pos.x;
          const dy = n.y - pos.y;
          const r = n.radius || (n.isDateNode ? 30 : 25);
@@ -786,15 +830,19 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ onDoubleClick })
     };
     canvas.addEventListener('contextmenu', handleContextMenu);
 
+
     return () => {
-      cancelAnimationFrame(animationId);
+      if (animationId) cancelAnimationFrame(animationId);
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+      
       canvas.removeEventListener('dblclick', handleDblClick);
       canvas.removeEventListener('contextmenu', handleContextMenu);
     };
   }, [setGraph, onDoubleClick]);
 
   const handleMouseDown = (e: React.MouseEvent) => {
-    if (e.button === 2) return; // Completely ignore right-clicks here to prevent selection/opening
+    if (e.button === 2) return; 
     
     setContextMenuNodeId(null);
     setHoveredNodeId(null);
@@ -807,6 +855,7 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ onDoubleClick })
     
     // Check for resize handle first
     let resizingNode = nodes.slice().reverse().find(n => {
+       if (state.selectedDate && n.date !== state.selectedDate) return false;
        if (!n.isGroup && !n.isSticky) return false;
        const baseSize = n.radius || (n.isDateNode ? 30 : (n.isCategory ? 35 : 25));
        const w = n.width || (n.isSticky ? baseSize * 4 : 400);
@@ -822,6 +871,7 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ onDoubleClick })
     }
 
     let clickedNode = nodes.slice().reverse().find(n => {
+      if (state.selectedDate && n.date !== state.selectedDate) return false;
       if (n.isGroup) return false;
 
       if (n.isSticky) {
@@ -839,6 +889,7 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ onDoubleClick })
 
     if (!clickedNode) {
       clickedNode = nodes.slice().reverse().find(n => {
+        if (state.selectedDate && n.date !== state.selectedDate) return false;
         if (!n.isGroup) return false;
         const w = n.width || 400;
         const h = n.height || 400;
@@ -888,7 +939,9 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ onDoubleClick })
     if (!isDraggingCanvasRef.current && !nodeDraggingRef.current && !lassoStartRef.current && !contextMenuNodeId) {
       const state = useGraphStore.getState();
       const hovered = state.nodes.slice().reverse().find(n => {
+        if (state.selectedDate && n.date !== state.selectedDate) return false;
         if (n.isGroup) return false;
+
         if (n.isSticky) {
           const baseSize = n.radius || (n.isDateNode ? 30 : (n.isCategory ? 35 : 25));
           const w = n.width || baseSize * 4;
@@ -956,23 +1009,35 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ onDoubleClick })
         const moveX = dx / transformRef.current.scale;
         const moveY = dy / transformRef.current.scale;
         
-        draggedNode.x += moveX;
-        draggedNode.y += moveY;
+        const oldX = draggedNode.x;
+        const oldY = draggedNode.y;
+
+        if (e.altKey) {
+          draggedNode.x = Math.round(pos.x / 50) * 50;
+          draggedNode.y = Math.round(pos.y / 50) * 50;
+        } else {
+          draggedNode.x += moveX;
+          draggedNode.y += moveY;
+        }
+
+        const actualMoveX = draggedNode.x - oldX;
+        const actualMoveY = draggedNode.y - oldY;
+
         draggedNode.vx = 0;
         draggedNode.vy = 0;
 
         if (draggedNode.isGroup) {
            state.nodes.forEach(n => {
              if (n.groupId === draggedNode.id && !n.isLocked) {
-                n.x += moveX;
-                n.y += moveY;
+                n.x += actualMoveX;
+                n.y += actualMoveY;
              }
            });
         } else if (state.selectedNodeIds.includes(draggedNode.id)) {
            state.nodes.forEach(n => {
              if (n.id !== draggedNode.id && state.selectedNodeIds.includes(n.id) && !n.isLocked) {
-                n.x += moveX;
-                n.y += moveY;
+                n.x += actualMoveX;
+                n.y += actualMoveY;
              }
            });
         }
@@ -1118,6 +1183,53 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ onDoubleClick })
         onMouseUp={handleMouseUp}
         onWheel={handleWheel}
         onDoubleClick={handleDoubleClick}
+        onDragOver={(e) => e.preventDefault()}
+        onDrop={(e) => {
+          e.preventDefault();
+          const file = e.dataTransfer.files[0];
+          if (file && file.type.startsWith('image/')) {
+            const pos = getCanvasPos(e.clientX, e.clientY);
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+              const img = new Image();
+              img.onload = () => {
+                const maxDim = 400;
+                let w = img.width;
+                let h = img.height;
+                if (w > maxDim || h > maxDim) {
+                  const ratio = Math.min(maxDim / w, maxDim / h);
+                  w *= ratio;
+                  h *= ratio;
+                }
+                const hiddenCanvas = document.createElement('canvas');
+                hiddenCanvas.width = w;
+                hiddenCanvas.height = h;
+                const hiddenCtx = hiddenCanvas.getContext('2d');
+                if (hiddenCtx) {
+                  hiddenCtx.drawImage(img, 0, 0, w, h);
+                  const dataUrl = hiddenCanvas.toDataURL('image/jpeg', 0.8);
+                  const todayStr = useGraphStore.getState().selectedDate || new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).replace(/ /g, '/').replace(',', '');
+                  useGraphStore.getState().addNode({
+                     id: crypto.randomUUID(),
+                     text: '',
+                     imageUrl: dataUrl,
+                     x: pos.x,
+                     y: pos.y,
+                     width: w,
+                     height: h,
+                     radius: Math.max(w, h) / 2, // approximation for collision
+                     vx: 0, vy: 0,
+                     date: todayStr,
+                     parentId: useGraphStore.getState().currentParentId || undefined
+                  });
+                  setTimeout(syncGraph, 100);
+                }
+              };
+              img.src = ev.target?.result as string;
+            };
+            reader.readAsDataURL(file);
+          }
+        }}
       />
       
       {/* Hover Preview */}
@@ -1195,6 +1307,14 @@ export const CanvasRenderer: React.FC<CanvasRendererProps> = ({ onDoubleClick })
               onClick={() => { useGraphStore.getState().deleteNode(contextMenuNodeId); setContextMenuNodeId(null); setTimeout(syncGraph, 100); }}
               style={{ background: '#ef4444', border: 'none', borderRadius: '50%', width: '40px', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', cursor: 'pointer', boxShadow: '0 4px 12px rgba(0,0,0,0.5)' }}>
               <Trash2 size={18} />
+            </button>
+          </div>
+          <div style={{ position: 'absolute', left: -20, top: 90, pointerEvents: 'auto' }}>
+            <button 
+              onClick={() => { useGraphStore.getState().toggleCollapse(contextMenuNodeId); setContextMenuNodeId(null); setTimeout(syncGraph, 100); }}
+              style={{ background: '#10b981', border: 'none', borderRadius: '50%', width: '40px', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', cursor: 'pointer', boxShadow: '0 4px 12px rgba(0,0,0,0.5)' }}
+              title="Collapse/Expand Branch">
+              <span style={{ fontWeight: 'bold' }}>{contextNode?.collapsed ? '+' : '-'}</span>
             </button>
           </div>
         </div>

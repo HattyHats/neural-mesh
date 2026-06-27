@@ -108,7 +108,7 @@ export function applyPhysics(nodes: Node[], edges: Edge[], dt: number): Node[] {
       }
     }
 
-    // Attraction from connected edges
+    // Attraction from connected edges (Gravity Wells only)
     edges.forEach(edge => {
       let otherNode: Node | undefined;
       if (edge.source === nodeA.id) {
@@ -130,32 +130,17 @@ export function applyPhysics(nodes: Node[], edges: Edge[], dt: number): Node[] {
         const dynamicSpringLength = Math.max(SPRING_LENGTH, radiusA + radiusB + 50);
 
         if (dist > 0) {
-          const force = ATTRACTION_FORCE * (dist - dynamicSpringLength);
-          fx += (dx / dist) * force;
-          fy += (dy / dist) * force;
+          // Normal edges no longer pull thoughts together (per user request).
+          // They only pull if the OTHER node is a Gravity Well or Category.
+          if (otherNode.isGravityWell || otherNode.isCategory) {
+            // Strong spring force to pull into a perfect orbit
+            const force = 0.2 * (dist - dynamicSpringLength);
+            fx += (dx / dist) * force;
+            fy += (dy / dist) * force;
+          }
         }
       }
     });
-
-    // Gravity well attraction for Category or explicit Gravity Well nodes
-    for (let j = 0; j < newNodes.length; j++) {
-      if (i === j) continue;
-      const nodeB = newNodes[j];
-      if ((nodeB.isCategory || nodeB.isGravityWell) && !nodeA.isGravityWell) {
-        const dx = nodeB.x - nodeA.x;
-        const dy = nodeB.y - nodeA.y;
-        const distSq = dx * dx + dy * dy;
-        const pullRadius = nodeB.isGravityWell ? 1000000 : 250000; // 1000px vs 500px radius
-        const pullForce = nodeB.isGravityWell ? 150 : 80;
-        
-        if (distSq > 0 && distSq < pullRadius) { 
-          const dist = Math.sqrt(distSq);
-          const force = pullForce / dist;
-          fx += (dx / dist) * force;
-          fy += (dy / dist) * force;
-        }
-      }
-    }
 
     // Focus mode attraction
     if (focusNodeId && focusSet.has(nodeA.id) && nodeA.id !== focusNodeId) {

@@ -32,6 +32,7 @@ export interface Node {
   embedUrl?: string;
   isGhost?: boolean;
   groupId?: string;
+  z?: number; // For 3D Galaxy Parallax
 }
 
 export interface Edge {
@@ -58,6 +59,9 @@ export interface GraphState {
   quickPadUrl: string | null;
   currentParentId: string | null;
   setCurrentParentId: (id: string | null) => void;
+  constellations: { id: string, name: string, nodes: Node[], edges: Edge[] }[];
+  saveConstellation: (name: string, nodeIds: string[]) => void;
+  spawnConstellation: (id: string, x: number, y: number) => void;
   pathway: string[];
   isPathwayPlaying: boolean;
   setPathway: (pathway: string[]) => void;
@@ -123,7 +127,47 @@ export const useGraphStore = create<GraphState>((set) => ({
   activeFocusId: null,
   timeFilter: null,
   currentParentId: null,
+  constellations: [],
   setCurrentParentId: (id) => set({ currentParentId: id }),
+  saveConstellation: (name, nodeIds) => set(state => {
+    const selectedNodes = state.nodes.filter(n => nodeIds.includes(n.id)).map(n => ({ ...n }));
+    const selectedEdges = state.edges.filter(e => nodeIds.includes(e.source) && nodeIds.includes(e.target)).map(e => ({ ...e }));
+    return {
+      constellations: [...state.constellations, { id: crypto.randomUUID(), name, nodes: selectedNodes, edges: selectedEdges }]
+    };
+  }),
+  spawnConstellation: (id, x, y) => set(state => {
+    const constellation = state.constellations.find(c => c.id === id);
+    if (!constellation) return {};
+    
+    // Calculate bounding box center of constellation
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    constellation.nodes.forEach(n => {
+      minX = Math.min(minX, n.x);
+      maxX = Math.max(maxX, n.x);
+      minY = Math.min(minY, n.y);
+      maxY = Math.max(maxY, n.y);
+    });
+    const cx = (minX + maxX) / 2;
+    const cy = (minY + maxY) / 2;
+
+    const idMap = new Map<string, string>();
+    const newNodes = constellation.nodes.map(n => {
+      const newId = crypto.randomUUID();
+      idMap.set(n.id, newId);
+      return { ...n, id: newId, x: x + (n.x - cx), y: y + (n.y - cy), vx: 0, vy: 0 };
+    });
+    const newEdges = constellation.edges.map(e => ({
+      ...e,
+      source: idMap.get(e.source)!,
+      target: idMap.get(e.target)!
+    }));
+
+    return {
+      nodes: [...state.nodes, ...newNodes],
+      edges: [...state.edges, ...newEdges]
+    };
+  }),
   pathway: [],
   isPathwayPlaying: false,
   setPathway: (pathway) => set({ pathway }),
@@ -146,7 +190,7 @@ export const useGraphStore = create<GraphState>((set) => ({
   addNode: (node) => {
     set((state) => {
       if (state.nodes.some(n => n.id === node.id)) return state;
-      return { nodes: [...state.nodes, { ...node, createdAt: node.createdAt || Date.now() }] };
+      return { nodes: [...state.nodes, { ...node, z: node.z || (Math.random() * 200 - 100), createdAt: node.createdAt || Date.now() }] };
     });
   },
   updateNodePos: (id, x, y) => set((state) => ({
@@ -162,7 +206,7 @@ export const useGraphStore = create<GraphState>((set) => ({
     });
   },
   setGraph: (nodes, edges, vaultSalt) => set(() => {
-    const updatedNodes = nodes.map(n => ({ ...n }));
+    const updatedNodes = nodes.map(n => ({ ...n, z: n.z || (Math.random() * 200 - 100) }));
     updatedNodes.forEach(n => {
       if (!n.isGroup && !n.groupId) {
         const targetGroup = updatedNodes.slice().reverse().find(g => {
