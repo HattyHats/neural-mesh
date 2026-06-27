@@ -1,7 +1,6 @@
 import { useGraphStore, type Node, type Edge } from '../store/useGraphStore';
 
 const REPULSION_FORCE = 6000;
-const ATTRACTION_FORCE = 0.08;
 const SPRING_LENGTH = 150;
 const DAMPING = 0.70;
 
